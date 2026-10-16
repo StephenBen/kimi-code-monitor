@@ -11,7 +11,7 @@
 > [4. Technical Implementation](#4-technical-implementation)
 
 
-> **Desktop client support (macOS / Windows)**: the same panel can be patched into the Kimi Code desktop client's session sidebar — no client code changes, automatic backup, fully reversible uninstall. Zero installation prerequisites: the client itself is all you need; no Node.js or any other dependency.
+> **Desktop client support (macOS / Windows)**: the same panel can be patched into the Kimi Code desktop client's session sidebar.
 >
 > Compared with the browser extension, the client edition does **not** yet support: the popup suite (custom-range usage charts / 140-day heatmap / data export / share cards), the desktop pet, AI reply bookmarks, auto-archiving, and quota-alert desktop notifications. External accounts, on the other hand, are easier: balances follow the providers configured in the client automatically — no manual key entry.
 >
