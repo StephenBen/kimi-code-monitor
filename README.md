@@ -18,8 +18,8 @@
 > ```text
 > 请根据 https://raw.githubusercontent.com/bfjnbvf/kimi-code-monitor/main/docs/SKILL-INSTALL.md ，安装 kimi-code-monitor 技能；装好启用后，按技能指示帮助我安装 Kimi Code 客户端面板。
 > 
-> 与浏览器扩展相比，客户端版暂不支持：弹窗套件（自定义日期范围用量图表 / 140 天热力图 / 数据导出 / 分享卡片）、桌面宠物、AI 回复收藏、自动归档、额度预警桌面通知。外部账户则更省事——余额自动跟随客户端里已配置的供应商，无需手动填 key。
 > ```
+> 与浏览器扩展相比，客户端版暂不支持：弹窗套件（自定义日期范围用量图表 / 140 天热力图 / 数据导出 / 分享卡片）、桌面宠物、AI 回复收藏、自动归档、额度预警桌面通知。外部账户则更省事——余额自动跟随客户端里已配置的供应商，无需手动填 key。
 
 ![Kimi Code Monitor：Kimi Code Web 的侧边栏监控扩展](docs/screenshots/head.png)
 
