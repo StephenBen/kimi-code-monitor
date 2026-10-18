@@ -32,8 +32,8 @@ import {
   removeExternalAccount,
   renameExternalAccount
 } from './background/external.js';
-// v3.5.0 起命名旧模型管线（background/rename.js 与 session-rename/）已整体删除，
-// 命名走官方实验 auto_session_title + 「扩展功能」卡片的复制提示词引导。
+// 命名相关通路已整体移除：v3.5.0 删旧模型管线（background/rename.js 与 session-rename/），
+// 其后官方实验的「复制提示词」引导子块也一并删除——标题生成完全由 Kimi CLI 官方实验承担。
 import { getActivePetAsset } from './background/pet.js';
 import {
   getCliUsageStatus,
@@ -103,9 +103,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     'tidy.settings.updated': async () => {
       await syncTidyAutoAlarm();
       return runTidyAutoIfDue();
-    },
-    // 官方自动命名实验状态：内容脚本读 /meta 判定，popup 据此隐藏引导子块
-    'rename.official.status': () => relayToKimiWebTab('rename.official.status.fetch', {})
+    }
   };
   const handler = handlers[message?.type];
   if (!handler) return false;

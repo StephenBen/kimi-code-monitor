@@ -1,6 +1,6 @@
 /**
  * 扩展弹窗（编排层）：模式识别 + 版本号 + 各板块装配。
- * 板块实现见 popup/ 目录：usage / accounts / external / rename / tidy / pets。
+ * 板块实现见 popup/ 目录：usage / accounts / external / tidy / pets。
  */
 import { initMode } from './popup/shared.js';
 import { initPopupLocale, applyPopupI18n } from './i18n.js';
@@ -9,7 +9,6 @@ import { setCliPathHelp, refreshCliStatus } from './popup/usage.js';
 import { refreshStatus } from './popup/accounts.js';
 import { buildExternalSection, refreshExternalStatus } from './popup/external.js';
 import { loadTidySettings, loadBookmarksFeature } from './popup/tidy.js';
-import './popup/rename.js';
 import { loadPetSection } from './popup/pets.js';
 import './popup/share-card.js';
 

@@ -699,19 +699,6 @@
   /* !important：button.action 等带元素名的选择器优先级更高，否则会盖掉 hidden */
   .hidden { display: none !important; }
 
-  /* --- 新会话 AI 自动命名区块 --- */
-  #rename-section {
-    padding: 10px;
-    border-radius: 8px;
-    background: var(--fill-1);
-    margin-bottom: 10px;
-  }
-
-  /* 行距与 Kimi 账户/外部账户卡片密度一致 */
-  #rename-section .ext-row {
-    margin-top: 8px;
-  }
-
   /* 功能卡片：标题行与正文的间距、首行不再重复留出上距 */
   .feature-body {
     margin-top: 8px;
@@ -734,27 +721,6 @@
 
   .feature-option .kswitch {
     flex-shrink: 0;
-  }
-
-  #rename-section select {
-    flex: 0 0 auto;
-    width: 152px;
-    margin-left: auto;
-    padding: 3px 4px;
-    border: 1px solid var(--fill-2);
-    border-radius: 6px;
-    background: var(--fill-1);
-    color: inherit;
-    font-size: 11px;
-  }
-
-  /* 次要注释：10px 灰字，视觉上从主控件降级 */
-  .rename-minor {
-    display: flex;
-    gap: 10px;
-    margin-top: 4px;
-    font-size: 10px;
-    color: var(--text-tertiary);
   }
 
   #status-text {
@@ -845,12 +811,6 @@
     text-transform: none;
     color: inherit;
   }
-  .ext-block-sub {
-    font-size: 11px;
-    color: var(--text-tertiary);
-    margin: 2px 0 0;
-    line-height: 1.5;
-  }
   .ext-block:not(.on) .tidy-config { display: none; }
 
   /* 自动整理配置行 */
@@ -890,15 +850,6 @@
     font-size: 11px;
     color: var(--text-secondary);
   }
-  /* 自动命名：复制提示词入口（蓝色文字，视觉上不是按钮） */
-  button.copy-prompt-link {
-    display: block; align-self: center; appearance: none; -webkit-appearance: none;
-    padding: 0; border: none; background: none; line-height: 1.5;
-    color: var(--accent); font-size: 11px; cursor: pointer; text-align: left;
-  }
-  button.copy-prompt-link:hover { color: var(--accent-hover); }
-  button.copy-prompt-link:disabled { color: var(--text-tertiary); cursor: default; }
-
   /* 首跑面板（一次性 dry run）：条数 + 具体会话名列表 + 解锁/清理入口 */
   .tidy-candidates { margin-top: 8px; }
   .tidy-first-list { margin-top: 4px; }
