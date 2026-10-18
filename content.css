@@ -201,7 +201,6 @@ html[data-color-scheme="dark"] #ksb-widget {
 }
 
 /* 数值（含单位）统一等宽字体，tabular-nums 保留以对齐全角数字场景 */
-.ksb-balance,
 .ksb-reset,
 .ksb-quota-pct,
 .ksb-stat-value,
@@ -235,6 +234,8 @@ html[data-color-scheme="dark"] #ksb-widget {
   gap: 6px;
 }
 
+/* 标题与状态允许先让位：药丸右边距是死的，空间不够时标题/状态先压缩，
+   再由下面的容器查询把「Kimi Code」整个缩成「Kimi」 */
 .ksb-title {
   font-size: 10px;
   font-weight: 500;
@@ -244,6 +245,9 @@ html[data-color-scheme="dark"] #ksb-widget {
   cursor: pointer;
   white-space: nowrap;
   transition: color 150ms ease;
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
 }
 
 html[data-color-scheme="dark"] #ksb-widget .ksb-title {
@@ -296,22 +300,106 @@ html[data-color-scheme="dark"] #ksb-widget .ksb-title {
   #ksb-pet-label { display: none; }
 }
 
-.ksb-balance {
+/* 标题行右侧药丸：右边距固定（margin-left:auto 把它顶到行尾），数额越长药丸
+   越往左生长，绝不越出右边距；行内空间不够时先让字段名让位（见下方容器查询与
+   .ksb-title 的 flex-shrink），再由容器查询把「Kimi Code」缩成「Kimi」 */
+.ksb-header-stat {
   margin-left: auto;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
   padding: 1px 7px;
   border-radius: 100px;
   background: var(--ksb-fill-2);
+  white-space: nowrap;
+  transition: background-color 150ms ease;
+}
+
+/* 配了「点击数据跳转」目标时整颗药丸可点（与宠物小球同一套语义） */
+.ksb-header-stat[data-link] {
+  cursor: pointer;
+}
+
+.ksb-header-stat[data-link]:hover {
+  background: var(--ksb-fill-2-hover);
+}
+
+/* 字段名：药丸里的弱化文字。宽度不够时**第一个让位**——① 面板窄到 220px 以下整体隐藏；
+   ② 极窄的行内挤压下它自己先被压没（数额 flex-shrink:0，一步不让）。
+   名称也进悬停提示，所以隐藏后信息不丢。 */
+.ksb-header-stat-label {
+  font-size: 10px;
+  color: var(--ksb-text-quaternary);
+  flex: 0 100 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+@container (max-width: 220px) {
+  .ksb-header-stat-label { display: none; }
+}
+
+.ksb-header-stat-value {
+  font-family: var(--ksb-mono);
   font-size: 10px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
   color: var(--ksb-text-secondary);
-  white-space: nowrap;
-  cursor: pointer;
-  transition: background-color 150ms ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
 }
 
-.ksb-balance:hover {
-  background: var(--ksb-fill-2-hover);
+/* 手动刷新小图标：无边框无底色，在数字左侧、与数字垂直居中对齐；
+   字号跟着所在容器走（标题行 10px、宠物标签 10px，用 em 缩放） */
+.ksb-stat-refresh {
+  appearance: none;
+  -webkit-appearance: none;
+  border: none;
+  background: none;
+  padding: 0;
+  margin: 0;
+  font-size: 0.85em;
+  line-height: 1;
+  color: var(--ksb-text-quaternary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 150ms ease;
+}
+
+/* hidden 属性必须压过上面的 display: inline-flex——否则浏览器默认的
+   [hidden]{display:none} 被覆盖，非余额口径时图标也一直显形（真实踩过） */
+.ksb-stat-refresh[hidden] {
+  display: none;
+}
+
+/* 宠物模块：刷新图标与左上角的字段名同字号、贴在名字右边（不占大数字的视觉重心） */
+.ksb-pet-label-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+}
+
+.ksb-stat-refresh:hover {
+  color: var(--ksb-accent);
+}
+
+.ksb-stat-refresh .ksb-stat-refresh-icon {
+  width: 1em;
+  height: 1em;
+  display: block;
+}
+
+.ksb-stat-refresh.spinning {
+  animation: ksb-spin 900ms linear infinite;
+}
+
+@keyframes ksb-spin {
+  to { transform: rotate(360deg); }
 }
 
 .ksb-agent-status {
@@ -327,17 +415,16 @@ html[data-color-scheme="dark"] #ksb-widget .ksb-title {
   flex-shrink: 0;
 }
 
-.ksb-status-dot.ksb-idle { background: var(--ksb-text-quaternary); }
-.ksb-status-dot.ksb-thinking,
-.ksb-status-dot.ksb-executing,
-.ksb-status-dot.ksb-replying {
+/* 灯点外观：类名来自 metrics 的 statusAppearance（与宠物球共用同一份映射，
+   标题行是宠物模块的精简版——两边永远同色同义） */
+.ksb-status-dot.ksb-dot-idle { background: var(--ksb-text-quaternary); }
+.ksb-status-dot.ksb-dot-work {
   background: var(--ksb-accent);
   animation: ksb-pulse 1.2s ease-in-out infinite;
 }
-.ksb-status-dot.ksb-offline { background: var(--ksb-danger); }
-.ksb-status-dot.ksb-unauthorized { background: var(--ksb-danger); }
-.ksb-status-dot.ksb-ratelimit { background: var(--ksb-orange); }
-.ksb-status-dot.ksb-subagent { background: var(--ksb-green); }
+.ksb-status-dot.ksb-dot-off { background: var(--ksb-danger); }
+.ksb-status-dot.ksb-dot-warn { background: var(--ksb-orange); }
+.ksb-status-dot.ksb-dot-sub { background: var(--ksb-green); }
 
 @keyframes ksb-pulse {
   0%, 100% { opacity: 1; transform: scale(1); }
@@ -959,26 +1046,51 @@ html[data-color-scheme="dark"] #ksb-widget .ksb-title {
   white-space: nowrap;
 }
 
+/* 外部账户行：名称在左、数值在右。**过窄时的降级阶梯（顺序固定，用 flex 优先级实现）**——
+   ① 类型前缀（API余额 / 5小时 等）先压没：数值区整体让位优先（shrink 100），
+      区内前缀又比数字先让（同样 100）；
+   ② 还不够时账户名称尾部省略（shrink 1，优先级最低）；
+   ③ 数字与单位一步不让（.ksb-external-amount，shrink 0 + nowrap）。
+   别改成「名称数值各shrink 1」——那会按比例同时压缩，数字被挤掉（真实踩过）。 */
 .ksb-external-name {
-  flex-shrink: 0;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: var(--ksb-text-secondary);
 }
 
 .ksb-external-value {
   font-family: var(--ksb-mono);
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  flex: 0 100 auto;
+  min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
+}
+
+.ksb-external-kind {
+  flex: 0 100 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ksb-text-quaternary);
+}
+
+.ksb-external-amount {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.ksb-external-sep {
+  flex: 0 0 auto;
 }
 
 .ksb-external-value.err {
   color: var(--ksb-danger);
 }
 
-/* 类型前缀（API 余额 / 5小时 等）的颜色弱化；窄面板整体隐藏只留数字（参考缓存命中降级） */
-.ksb-external-kind {
-  color: var(--ksb-text-quaternary);
-}
-
+/* 面板本身就过窄时直接隐藏类型前缀（阶梯第 ① 级；行内挤压由上面的 flex 优先级兜） */
 @container (max-width: 160px) {
   .ksb-external-kind {
     display: none;
@@ -1140,9 +1252,8 @@ html[data-color-scheme="dark"] #ksb-widget .ksb-title {
   .ksb-auth-banner {
     transition: none;
   }
-  .ksb-status-dot.ksb-thinking,
-  .ksb-status-dot.ksb-executing,
-  .ksb-status-dot.ksb-replying {
+  .ksb-status-dot.ksb-dot-work,
+  .ksb-stat-refresh.spinning {
     animation: none;
   }
   .ksb-pet-status[data-status="thinking"],
@@ -1501,6 +1612,7 @@ html[data-color-scheme="dark"] #ksb-walk {
   font-variant-numeric: tabular-nums;
   color: var(--ksb-text);
   white-space: nowrap;
+}
 }
 
 /* 半宽：高度对齐普通半宽模块——球缩到 32px 左对齐，数据行隐藏，

@@ -1,6 +1,6 @@
 # 外部账户与余额（自动跟随客户端里的供应商）
 
-面板的「外部账户」模块显示第三方平台的 API 余额/额度：DeepSeek、Kimi API（Moonshot）、智谱（BigModel）、MiniMax。
+面板的「外部账户」模块显示第三方平台的 API 余额/额度：DeepSeek、Kimi API（Moonshot）、智谱（BigModel）、MiniMax、阶跃星辰 StepFun。
 
 **账户来源就是客户端自己的供应商配置**——用户在客户端「模型设置」里加的那个（落在 `~/.kimi-code/config.toml`）。所以：
 
@@ -59,7 +59,7 @@ SUMMARY 探测 3 个：已接入外部账户 1 个 · 不支持余额查询 1 �
 
 1. **不要向用户索取 provider key**：面板从客户端自己的配置里读，key 不经过你、不经过对话。
 2. 你的任何输出里不出现完整 key（尾 4 位可以，用于辨认）。
-3. 只允许调用脚本内置的白名单端点（`src/providers.js` 的适配表：api.deepseek.com / api.moonshot.cn / open.bigmodel.cn / minimaxi.com），不要手工构造其他请求。
+3. 只允许调用脚本内置的白名单端点（`src/providers.js` 的适配表：api.deepseek.com / api.moonshot.cn / open.bigmodel.cn / minimaxi.com / api.stepfun.com），不要手工构造其他请求。
 4. 若用户主动把 key 粘贴进对话，提醒一句「对话记录会保留这个 key，建议用可轮换的 key」，并说明面板并不需要它。
 
 ## 加油包余额（Kimi 自己的账户）——另一条通路

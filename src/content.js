@@ -27,7 +27,7 @@ import {
   initRender,
   disposeRender,
   renderChart,
-  renderPetStats,
+  renderStatSlots,
   updateBalance
 } from './content/render.js';
 import {
@@ -134,7 +134,9 @@ initWidgetStructure({
   manualRefresh,
   beginOAuth,
   fetchQuota,
-  fetchExternalProviders
+  fetchExternalProviders,
+  // 余额口径的刷新小图标：立刻重新拉一次额度/余额（真请求，不是重绘）
+  refreshBalance: () => fetchQuota()
 });
 
 initPet({
@@ -146,7 +148,9 @@ initRender({
   isDisposed: () => disposed,
   petUpdateStatus,
   roamPetSetStatus,
-  onQuotaReset: () => fetchQuota()
+  onQuotaReset: () => fetchQuota(),
+  // 余额口径的刷新小图标：走同一条通路，立刻重新拉一次（真请求，不是重绘）
+  refreshBalance: () => fetchQuota()
 });
 
 initQuota({
@@ -259,7 +263,7 @@ function handleStorageChanged(changes, area) {
   if (dailyKey && changes[dailyKey]) {
     panel.usageDailyCache = changes[dailyKey].newValue || {};
     renderChart();
-    renderPetStats();
+    renderStatSlots();
   }
   const hourlyKey = KimiCliUsage.HOURLY_STORAGE_KEY;
   if (hourlyKey && changes[hourlyKey]) {
@@ -282,7 +286,7 @@ function handleStorageChanged(changes, area) {
       panel.usageHourlyCache = {};
     }
     renderChart();
-    renderPetStats();
+    renderStatSlots();
   }
   if (!changes.kimiOnboardingResetAt) return;
   try {

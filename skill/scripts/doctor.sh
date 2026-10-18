@@ -76,12 +76,20 @@ fi
   || warn "无加油包余额快照（余额以活数据为准；客户端没在运行时才显示 --，可让技能刷新一份兜底）"
 
 # 5. kap 本地服务（发现 + 探测）
+# /api/v1/* 要 kap 令牌（客户端 2.x 起，裸调 40101）：读 server.token 带上，
+# 读不到就裸调（老客户端无鉴权，向后兼容）。与 doctor.mjs 的 kapAuthHeaders 同口径
+KIMI_HOME="${KIMI_CODE_HOME:-$HOME/.kimi-code}"
+KAP_TOKEN=""
+[ -f "$KIMI_HOME/server.token" ] && KAP_TOKEN=$(tr -d '[:space:]' < "$KIMI_HOME/server.token" 2>/dev/null)
+CURL_AUTH=()
+[ -n "$KAP_TOKEN" ] && CURL_AUTH=(-H "Authorization: Bearer $KAP_TOKEN")
 KAP_PORT=""
-for f in "$HOME"/.kimi-code/server/instances/*.json; do
+for f in "$KIMI_HOME"/server/instances/*.json; do
   [ -f "$f" ] || continue
   P=$(python3 -c "import json;print(json.load(open('$f')).get('port',''))" 2>/dev/null)
   [ -z "$P" ] && continue
-  CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 "http://127.0.0.1:$P/api/v1/oauth/usage" 2>/dev/null)
+  # bash 3.2（macOS 自带）+ set -u：空数组展开要加守卫，否则直接崩
+  CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 ${CURL_AUTH[@]+"${CURL_AUTH[@]}"} "http://127.0.0.1:$P/api/v1/oauth/usage" 2>/dev/null)
   if [ "$CODE" = "200" ]; then KAP_PORT="$P"; break; fi
 done
 if [ -n "$KAP_PORT" ]; then

@@ -15,6 +15,8 @@ import {
   normalizeWidgetConfig,
   pruneDailyUsage,
   pruneHourlyUsage,
+  DATA_LINKS,
+  statusAppearance,
   sumUsageBetween,
   totalInputTokens,
   usageDayKey,
@@ -217,7 +219,7 @@ test('Widget 配置：默认布局（标题行隐藏作备份、宠物沉底置�
   assert.deepEqual(config.orderMini, ['pet', 'quota5h', 'quotaWeek']);
   assert.deepEqual(config.orderHidden, ['header', 'duration', 'external', 'agents']);
   assert.deepEqual(config.modules.header, {
-    show: 'hidden', span: 2, showBalance: true, balanceLink: 'subscription'
+    show: 'hidden', span: 2, stat: 'balance', dataLink: 'subscription'
   });
   // 消耗量默认整宽在完整区末尾；上轮耗时/外部账户默认半宽隐藏（同行相邻）
   assert.equal(config.modules.usageChart.show, 'full');
@@ -233,14 +235,50 @@ test('Widget 配置：v1 独立 header 配置迁移为模块', () => {
     header: { showInMini: true, showBalance: false, balanceLink: 'console' }
   });
   assert.deepEqual(config.modules.header, {
-    show: 'mini', span: 2, showBalance: false, balanceLink: 'console'
+    show: 'mini', span: 2, stat: 'daily', dataLink: 'console'
   });
   assert.deepEqual(config.orderMini, ['pet', 'quota5h', 'quotaWeek', 'header']);
   assert.deepEqual(config.orderFull, ['input', 'cache', 'output', 'speed', 'usageChart']);
   // 非法迁移值回落默认
   const broken = normalizeWidgetConfig({ header: { showInMini: 'yes', balanceLink: 'https://evil.example' } });
   assert.equal(broken.modules.header.show, 'hidden');
-  assert.equal(broken.modules.header.balanceLink, 'subscription');
+  assert.equal(broken.modules.header.dataLink, 'subscription');
+});
+
+test('标题行数据口径：显式 stat 优先，老 showBalance 迁移（关过余额的落到今日消耗）', () => {
+  // 显式口径照用（与宠物模块同一套六项）
+  assert.equal(normalizeWidgetConfig({ modules: { header: { stat: 'speed' } } }).modules.header.stat, 'speed');
+  assert.equal(normalizeWidgetConfig({ modules: { header: { stat: 'cache' } } }).modules.header.stat, 'cache');
+  // 老配置：没关过余额（true 或没这个键）→ 余额不变；关过 → 今日消耗
+  assert.equal(normalizeWidgetConfig({ modules: { header: { showBalance: true } } }).modules.header.stat, 'balance');
+  assert.equal(normalizeWidgetConfig({ modules: { header: {} } }).modules.header.stat, 'balance');
+  assert.equal(normalizeWidgetConfig({ modules: { header: { showBalance: false } } }).modules.header.stat, 'daily');
+  // 非法口径回落默认（余额）
+  assert.equal(normalizeWidgetConfig({ modules: { header: { stat: 'evil' } } }).modules.header.stat, 'balance');
+});
+
+test('标题行跳转目标 dataLink：与宠物小球同一套语义，老 balanceLink 迁移', () => {
+  assert.deepEqual(DATA_LINKS, ['none', 'console', 'subscription']);
+  assert.equal(normalizeWidgetConfig({ modules: { header: { dataLink: 'none' } } }).modules.header.dataLink, 'none');
+  assert.equal(normalizeWidgetConfig({ modules: { header: { dataLink: 'console' } } }).modules.header.dataLink, 'console');
+  // 老配置只有 balanceLink（充值页/控制台两档）：沿用，不丢用户的选择
+  assert.equal(normalizeWidgetConfig({ modules: { header: { balanceLink: 'console' } } }).modules.header.dataLink, 'console');
+  assert.equal(normalizeWidgetConfig({ modules: { header: { balanceLink: 'subscription' } } }).modules.header.dataLink, 'subscription');
+  // 非法值回落默认（充值页）
+  assert.equal(normalizeWidgetConfig({ modules: { header: { dataLink: 'evil' } } }).modules.header.dataLink, 'subscription');
+});
+
+test('外观映射唯一：灯点与宠物球共用 statusAppearance', () => {
+  // 标题行是宠物模块的精简版：外观语义只有一份映射（metrics.statusAppearance）
+  assert.equal(statusAppearance('idle'), 'idle');
+  assert.equal(statusAppearance('thinking'), 'work');
+  assert.equal(statusAppearance('executing'), 'work');
+  assert.equal(statusAppearance('replying'), 'work');
+  assert.equal(statusAppearance('subagent'), 'sub');
+  assert.equal(statusAppearance('ratelimit'), 'warn');
+  assert.equal(statusAppearance('offline'), 'off');
+  assert.equal(statusAppearance('unauthorized'), 'off');
+  assert.equal(statusAppearance('未知状态'), 'work'); // 兜底当工作中，不落灰
 });
 
 test('Widget 配置：非法字段逐项回落，标题行宽度强制整宽', () => {
@@ -253,7 +291,7 @@ test('Widget 配置：非法字段逐项回落，标题行宽度强制整宽', (
     }
   });
   assert.equal(config.modules.header.span, 2); // 标题行不接受半宽
-  assert.equal(config.modules.header.showBalance, true); // 非 boolean 回落默认
+  assert.equal(config.modules.header.stat, 'balance'); // 非法 showBalance 非 boolean → 按默认口径
   assert.equal(config.modules.input.show, 'mini');
   assert.equal(config.modules.input.span, 2);
   assert.equal(config.modules.speed.show, 'full'); // 非法状态回落默认

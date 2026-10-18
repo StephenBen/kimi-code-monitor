@@ -20,7 +20,7 @@ const PAGE_HTML = '<!DOCTYPE html><html><head></head><body></body></html>';
 const VISIBLE_CONFIG = {
   version: 3,
   modules: {
-    header: { show: 'full', span: 2, showBalance: true, balanceLink: 'subscription' },
+    header: { show: 'full', span: 2, stat: 'balance', balanceLink: 'subscription' },
     input: { show: 'full', span: 1 }, cache: { show: 'full', span: 1 },
     output: { show: 'full', span: 1 }, speed: { show: 'full', span: 1 },
     duration: { show: 'full', span: 1 },
@@ -38,6 +38,14 @@ const VISIBLE_CONFIG = {
 
 function setVisibleConfig(window) {
   window.localStorage.setItem('kimi-statusbar.config', JSON.stringify(VISIBLE_CONFIG));
+}
+
+// 同上，但覆盖两个模块各自的右侧数据口径（stat）——验证它们互不影响
+function setConfigWithStats(window, headerStat, petStat) {
+  const config = JSON.parse(JSON.stringify(VISIBLE_CONFIG));
+  config.modules.header.stat = headerStat;
+  config.modules.pet.stat = petStat;
+  window.localStorage.setItem('kimi-statusbar.config', JSON.stringify(config));
 }
 
 /** kap 现在返回的真实形状：字段齐全但全为零 */
@@ -483,7 +491,7 @@ test('panel-app：余额跟随 kap 的 extraUsage 活数据，无钱包字段的
     await ready;
     await tick(window);
     const push = (msg) => window.__kcm.push(msg);
-    const balance = () => window.document.getElementById('ksb-balance').textContent;
+    const balance = () => window.document.getElementById('ksb-header-stat-text').textContent;
     // kap 真实形状：extraUsage 单位是分；balanceCents 1358 → ¥13.58
     const kapQuota = (extraUsage) => ({
       v: 1, type: 'quota',
@@ -508,9 +516,10 @@ test('panel-app：余额跟随 kap 的 extraUsage 活数据，无钱包字段的
     push({ v: 1, type: 'quota', quota: { wallet: { status: 'STATUS_ACTIVE', balance: { amountLeft: '99900000000' } } }, walletFetchedAt: '2026-10-14T23:13:00.000Z' });
     assert.equal(balance(), '¥13.58');
 
-    // kap 明确没有加油包（extraUsage: null）才清空
+    // extraUsage 为 null（本机实测恒为 null）：语义是「kap 不提供」而非「账户没有
+    // 钱包」——不能据此清空，沿用上次成功值（活数据路径下由 wallet.js 快照接管）
     push(kapQuota(null));
-    assert.equal(balance(), '余额 --');
+    assert.equal(balance(), '¥13.58', 'extraUsage 为 null 是「kap 不提供」，不是「没有钱包」');
   } finally {
     window.close();
   }
@@ -525,7 +534,7 @@ test('panel-app：活数据未到位时 wallet.js 快照兜底（web API 形状�
     await ready;
     await tick(window);
     const push = (msg) => window.__kcm.push(msg);
-    const balance = () => window.document.getElementById('ksb-balance').textContent;
+    const balance = () => window.document.getElementById('ksb-header-stat-text').textContent;
 
     // 首屏：kap 还没响应，loader 的 wallet.js 快照（安装时写入）先兜底
     push({
@@ -534,6 +543,13 @@ test('panel-app：活数据未到位时 wallet.js 快照兜底（web API 形状�
       walletFetchedAt: '2026-10-14T23:13:00.000Z'
     });
     assert.equal(balance(), '¥99.90');
+    // 快照的数据时间进悬停提示（桌面端余额是快照制，不能让人以为是实时数）
+    // （提示挂在药丸上：字段名 + 跳转说明 + 数据时间；药丸里只显示数额）
+    const slot = window.document.getElementById('ksb-header-stat');
+    const at = new Date('2026-10-14T23:13:00.000Z');
+    const pad = (n) => String(n).padStart(2, '0');
+    const local = `${pad(at.getMonth() + 1)}-${pad(at.getDate())} ${pad(at.getHours())}:${pad(at.getMinutes())}`;
+    assert.ok(slot.title.includes(local), `提示应含本地数据时间 ${local}，实际：${slot.title}`);
 
     // 活数据随后到达：以活数据为准（kap extraUse 单位分）
     push({ v: 1, type: 'quota', quota: { limit5h: { usedRatio: 0.06 } }, extraUsage: { balanceCents: 1358, currency: 'CNY' } });
@@ -548,6 +564,89 @@ test('panel-app：活数据未到位时 wallet.js 快照兜底（web API 形状�
     assert.equal(balance(), '¥88.80');
   } finally {
     window.close();
+  }
+});
+
+test('panel-app：长期统计到达后标题行数据位跟着刷（曾经停在首帧「统计中」）', async () => {
+  // 回归：数据到达路径只调了 renderPetStats，标题行停在首帧的状态文案，
+  // 要进编辑模式（重建结构）才「碰巧」正确
+  const { window } = createPage();
+  try {
+    setConfigWithStats(window, 'daily', 'balance');
+    const ready = new Promise((resolve) => window.addEventListener('kcm:panel-ready', resolve));
+    injectScript(window, 'dist/panel-app.js');
+    await ready;
+    await tick(window);
+    const doc = window.document;
+    // 首帧还没有今天的数：显示占位（不是数字）
+    assert.notEqual(doc.getElementById('ksb-header-stat-text').textContent, '');
+    // 长期统计到达 → 标题行与宠物都刷成数字
+    const todayKey = usageDayKey(new Date());
+    window.__kcm.push({
+      v: 1,
+      type: 'usageDaily',
+      daily: { [todayKey]: { input: 420000, output: 38000, cacheRead: 218000 } },
+      hourly: {}
+    });
+    await tick(window);
+    // 标题行（今日消耗口径）跟着刷成数字；宠物是余额口径，没有钱包时是占位
+    assert.match(doc.getElementById('ksb-header-stat-text').textContent, /\d/);
+    assert.equal(doc.getElementById('ksb-pet-total-text').textContent, '余额 --');
+  } finally {
+    window.close();
+  }
+});
+
+test('panel-app：标题行右侧数据位与宠物共用口径，余额口径带可点刷新', async () => {
+  // 余额口径：标签 + 数字 + 无边框刷新图标；点图标走 refreshBalance 钩子
+  const first = createPage();
+  try {
+    setVisibleConfig(first.window);
+    let refreshed = 0;
+    first.window.__kcmRefreshWallet = () => { refreshed += 1; };
+    const ready = new Promise((resolve) => first.window.addEventListener('kcm:panel-ready', resolve));
+    injectScript(first.window, 'dist/panel-app.js');
+    await ready;
+    await tick(first.window);
+    const doc = first.window.document;
+    // 药丸里是「字段名 + 数额」：字段名用面板里的简称（窄了由 CSS 隐藏），数额在悬停提示里也有
+    assert.equal(doc.getElementById('ksb-header-stat-label').textContent, '余额');
+    assert.equal(doc.getElementById('ksb-header-stat-text').textContent, '余额 --');
+    assert.match(doc.getElementById('ksb-header-stat').title, /加油包余额/);
+    const refreshBtn = doc.getElementById('ksb-header-stat-refresh');
+    assert.ok(refreshBtn, '余额口径应挂刷新图标');
+    assert.equal(refreshBtn.hidden, false);
+    refreshBtn.dispatchEvent(new first.window.MouseEvent('click', { bubbles: true }));
+    assert.equal(refreshed, 1, '点图标应触发一次手动刷新');
+    // 宠物模块选的是「今日消耗」，不挂刷新图标（非余额口径本来就会自动更新）
+    assert.equal(doc.getElementById('ksb-pet-stat-refresh').hidden, true);
+  } finally {
+    first.window.close();
+  }
+
+  // 两个模块各选各的：标题行「缓存命中」时宠物仍是「余额」，互不联动
+  const second = createPage();
+  try {
+    setConfigWithStats(second.window, 'cache', 'balance');
+    const ready = new Promise((resolve) => second.window.addEventListener('kcm:panel-ready', resolve));
+    injectScript(second.window, 'dist/panel-app.js');
+    await ready;
+    await tick(second.window);
+    const doc = second.window.document;
+    // 面板里显示简称「余额」，完整名「加油包余额」只在菜单/悬停里
+    assert.equal(doc.getElementById('ksb-pet-label').textContent, '余额');
+    assert.match(doc.getElementById('ksb-header-stat').title, /缓存命中/);
+    // 非余额口径不挂刷新图标；宠物是余额口径 → 只在宠物那边出现，且贴在字段名旁
+    assert.equal(doc.getElementById('ksb-header-stat-refresh').hidden, true);
+    const petRefresh = doc.getElementById('ksb-pet-stat-refresh');
+    assert.equal(petRefresh.hidden, false);
+    assert.equal(petRefresh.parentElement.className, 'ksb-pet-label-row');
+    // 图标是内联 SVG（字形在不同字号下会飘）
+    assert.ok(petRefresh.querySelector('svg.ksb-stat-refresh-icon'));
+    // 余额口径的药丸可点（dataLink 配了目标就整颗可点，与宠物小球同一套语义）
+    assert.equal(doc.getElementById('ksb-header-stat').dataset.link, '1');
+  } finally {
+    second.window.close();
   }
 });
 
@@ -751,10 +850,14 @@ test('panel-app：外部账户结果直接生效（唯一来源是直连抓取�
     await ready;
     await tick(window);
     const push = (msg) => window.__kcm.push(msg);
+    // 前缀与数字各自成 span（过窄时前缀先让位、数字永不动），分别断言
     const rows = () => [...window.document.querySelectorAll('#ksb-external-list .ksb-external-row')]
       .map((row) => [
         row.querySelector('.ksb-external-name').textContent.trim(),
-        row.querySelector('.ksb-external-value').textContent.replace(/\s+/g, ' ').trim()
+        row.querySelector('.ksb-external-kind')?.textContent.trim() || '',
+        // 有数字 span 就读数字；没有（整段是「获取失败」这类提示语）就回退读整段
+        row.querySelector('.ksb-external-amount')?.textContent.trim()
+          || row.querySelector('.ksb-external-value').textContent.trim()
       ]);
     const balance = (total) => ({
       id: 'ext-deepseek-0b71', provider: 'deepseek', name: 'deepseek', keyTail: '0b71',
@@ -766,11 +869,11 @@ test('panel-app：外部账户结果直接生效（唯一来源是直连抓取�
       v: 1, type: 'external', providers: [balance(6.7)],
       unsupported: [{ id: 'StepFun Step Plan', host: 'api.stepfun.com', reason: '暂无该供应商的余额查询适配' }]
     });
-    assert.deepEqual(rows(), [['deepseek', 'API余额 ¥6.70']]);
+    assert.deepEqual(rows(), [['deepseek', 'API余额', '¥6.70']]);
 
     // 下一轮拿到新值：直接覆盖，不需要任何来源优先级判定
     push({ v: 1, type: 'external', providers: [balance(5.2)] });
-    assert.deepEqual(rows(), [['deepseek', 'API余额 ¥5.20']]);
+    assert.deepEqual(rows(), [['deepseek', 'API余额', '¥5.20']]);
   } finally {
     window.close();
   }
@@ -785,10 +888,14 @@ test('panel-app：接口失败沿用上次成功的数字，年龄写在类型�
     await ready;
     await tick(window);
     const push = (msg) => window.__kcm.push(msg);
+    // 前缀与数字各自成 span（过窄时前缀先让位、数字永不动），分别断言
     const rows = () => [...window.document.querySelectorAll('#ksb-external-list .ksb-external-row')]
       .map((row) => [
         row.querySelector('.ksb-external-name').textContent.trim(),
-        row.querySelector('.ksb-external-value').textContent.replace(/\s+/g, ' ').trim()
+        row.querySelector('.ksb-external-kind')?.textContent.trim() || '',
+        // 有数字 span 就读数字；没有（整段是「获取失败」这类提示语）就回退读整段
+        row.querySelector('.ksb-external-amount')?.textContent.trim()
+          || row.querySelector('.ksb-external-value').textContent.trim()
       ]);
     const titles = () => [...window.document.querySelectorAll('#ksb-external-list .ksb-external-row')]
       .map((row) => row.getAttribute('title') || '');
@@ -808,8 +915,8 @@ test('panel-app：接口失败沿用上次成功的数字，年龄写在类型�
       ]
     });
     assert.deepEqual(rows(), [
-      ['deepseek', '3 分钟前 ¥6.70'],
-      ['moonshot', '获取失败']
+      ['deepseek', '3 分钟前', '¥6.70'], // 失败时前缀位置是数字年龄
+      ['moonshot', '', '获取失败'] // 从未成功过：整段是提示语，没有前缀/数字分层
     ]);
     assert.match(titles()[0], /3 分钟前 · HTTP 503/);
     assert.match(titles()[1], /Key 无效或已过期（401）/);

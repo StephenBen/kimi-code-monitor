@@ -139,14 +139,17 @@
 
   // 加油包余额快照（fetch-wallet.mjs 产出）：以 quota 消息的 wallet 字段
   // 送达（handleQuota 里 limit5h/limit7d 可缺席，只更新余额位）。
-  // fetchedAt 一并带上：bridge 据此判断「用户刚跑过刷新余额」——活数据
-  // （direct.js 的 extraUsage）未到位时它兜底，到位后只有更新的快照才生效
-  startPolling({
+  // fetchedAt 一并带上：bridge 据此判断「用户刚跑过刷新余额」——kap 活数据
+  // （direct.js 的 extraUsage，本机实测恒 null）未到位时它兜底，到位后只有
+  // 更新的快照才生效。手动刷新小图标走 __kcmRefreshWallet：立刻重读一次文件
+  // （文件没变就是同值，不算错；变了立刻生效——技能刷过快照就是这条路）
+  const walletPoller = startPolling({
     src: '/kcm/wallet.js',
     baseMs: 60_000,
     read: () => window.__kcmWallet,
     onPayload: (j) => window.__kcm.push({ v: 1, type: 'quota', quota: { wallet: j.wallet }, walletFetchedAt: j.fetchedAt })
   });
+  window.__kcmRefreshWallet = () => walletPoller.push();
 
   // 面板资源同目录直链（shims.resolveResourcePath 优先命中这个映射）
   window.__kcmAssets = {

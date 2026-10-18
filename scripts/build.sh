@@ -31,6 +31,12 @@ unzip -t "$OUT" >/dev/null
 echo "已生成 $OUT"
 unzip -l "$OUT"
 
+# 桌面端补丁包（固定名，随 Release 分发）。**必须在这里构建**：它有独立的产物目录
+# 与版本标记（dist-patch/kcm/VERSION），此前 pack 不含这一步，导致本地开发后
+# 「npm run pack」出来的补丁包仍是上一版（发版前才发现）。build-patch.mjs 自己
+# 负责从 src/ 重新构建并写出 kcm-desktop-patch.zip。
+node scripts/build-patch.mjs
+
 # 技能包（固定名，随 Release 分发；版本号见包内 MAINTENANCE）。
 # 顶层带 kimi-code-monitor/ 目录：解压到 ~/.kimi-code/skills/ 即就位。
 SKILL_OUT="kimi-code-monitor-skill.zip"

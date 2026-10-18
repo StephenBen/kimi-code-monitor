@@ -13,6 +13,7 @@ import http from 'node:http';
 import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { kapAuthHeaders } from '../../src/kap-auth.mjs';
 
 const APP_NAME = 'Kimi Code';
 const BACKUP_SUFFIX = '.bak-kcm';
@@ -87,7 +88,9 @@ export function payloadHash(root) {
 
 function httpStatus(port, urlPath, timeoutMs = 2000) {
   return new Promise((resolve) => {
-    const req = http.get({ host: '127.0.0.1', port, path: urlPath, timeout: timeoutMs }, (res) => {
+    // /api/v1/* 要 kap 令牌（客户端 2.x 起）；/kcm/* 静态文件不走鉴权。
+    // 读不到令牌时裸调，老客户端无鉴权（向后兼容）
+    const req = http.get({ host: '127.0.0.1', port, path: urlPath, timeout: timeoutMs, headers: kapAuthHeaders() }, (res) => {
       res.resume();
       resolve(res.statusCode || 0);
     });

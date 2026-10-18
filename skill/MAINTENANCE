@@ -1,8 +1,16 @@
-skill-version: 10
-patch-version: 3.5.3
+skill-version: 11
+patch-version: 3.5.4
 repo: https://github.com/bfjnbvf/kimi-code-monitor
 
 # 更新记录
+
+## 11（2026-10-18）
+
+配套补丁 3.5.4：
+
+- **更新流程补两条软指令**（update.md）：用户主动要求更新时，先拉远端更新记录、用一两句话简要说明这个版本改了什么再动手；升级完成后收尾汇报一句「哪个版本升到哪个版本、主要改了什么」，说主要的就行，不用贴完整日志
+- **技能脚本修 kap 鉴权**（client-providers.mjs / doctor.mjs / doctor.sh + 新增 src/kap-auth.mjs）：客户端 2.x 起所有 /api/v1/* 都要求 Bearer 令牌，三个脚本裸调全部 401——provider 探测报「探测不到客户端」、doctor 的本地服务检查 FAIL。改为读 ~/.kimi-code/server.token（KIMI_CODE_HOME 可改根）带头请求，读不到时裸调（老客户端无鉴权，向后兼容）
+- 配套（面板侧）：外部账户新增**阶跃星辰 StepFun** 适配（GET api.stepfun.com/v1/accounts，余额/充值/赠送）；external-accounts / SKILL.md / guide-scripts 的供应商清单同步
 
 ## 10（2026-10-18）
 

@@ -14,6 +14,7 @@ import {
   aggregateSpeed,
   formatTokenCount,
   listDayKeysBetween,
+  statusAppearance,
   sumUsageBetween,
   totalInputTokens,
   usageDayKey,
@@ -92,14 +93,13 @@ export function updateProgress(prefix, percentage) {
   }
 }
 
-export function updateBalance(wallet) {
-  // undefined 表示“用缓存值重绘”（结构重建后），null/对象则更新缓存
+export function updateBalance(wallet, fetchedAt) {
+  // undefined 表示“用缓存值重绘”（结构重建后），null/对象则更新缓存。
+  // fetchedAt 是快照的写入时间（桌面端余额的唯一时间戳），存下来给悬停提示用。
   if (wallet !== undefined) panel.lastWallet = wallet;
-  if (!panel.els?.balance) return;
-  const balanceYuan = boosterBalanceYuan(panel.lastWallet);
-  panel.els.balance.textContent = balanceYuan != null
-    ? `¥${balanceYuan.toFixed(2)}`
-    : t('余额 --');
+  if (fetchedAt) panel.lastWalletFetchedAt = fetchedAt;
+  // 余额现在是两个数据位的一种口径（标题行 / 宠物模块），不占独立元素了
+  renderStatSlots();
 }
 
 export function updateTokenDisplay() {
@@ -145,7 +145,9 @@ let pendingStatusTimer = null;
 
 export function paintAgentStatus(display) {
   if (!panel.els) return;
-  if (panel.els.statusDot) panel.els.statusDot.className = `ksb-status-dot ksb-${display}`;
+  // 灯点与宠物球共用同一份外观映射（statusAppearance）：标题行是宠物模块的精简版，
+  // 两边永远同色同义，不会各自漂移
+  if (panel.els.statusDot) panel.els.statusDot.className = `ksb-status-dot ksb-dot-${statusAppearance(display)}`;
   if (panel.els.agentStatus) panel.els.agentStatus.textContent = statusText(display);
   hooks.petUpdateStatus?.(display);
   hooks.roamPetSetStatus?.(display);
@@ -203,7 +205,7 @@ export function renderAll() {
   renderSparks();
   renderAgents();
   renderExternal();
-  renderPetStats();
+  renderStatSlots();
 }
 
 /* ---------- 会话折线（整宽统计模块） ---------- */
@@ -567,14 +569,16 @@ export function renderExternal() {
     // 失败原因在悬停里；从未成功过才显示「获取失败」
     const age = externalAgeText(provider.fetchedAt);
     if (provider.error && !age) return t('获取失败');
+    // 类型前缀与数字分两个 span：过窄时 CSS 先把前缀压没、再省略账户名，
+    // 数字与单位（ksb-external-amount）永不移动
     if (provider.kind === 'balance') {
       const kind = provider.error ? age : t('API余额');
-      return `<span class="ksb-external-kind">${escapeHtml(kind)}</span> ${escapeHtml(provider.currency)}${provider.total.toFixed(2)}`;
+      return `<span class="ksb-external-kind">${escapeHtml(kind)}</span><span class="ksb-external-amount">${escapeHtml(provider.currency)}${provider.total.toFixed(2)}</span>`;
     }
     if (provider.windows?.length) {
       return provider.windows
-        .map((w) => `<span class="ksb-external-kind">${escapeHtml(w.label)}</span> ${formatPercentage(w.pct)}%`)
-        .join(' · ');
+        .map((w) => `<span class="ksb-external-kind">${escapeHtml(w.label)}</span><span class="ksb-external-amount">${formatPercentage(w.pct)}%</span>`)
+        .join('<span class="ksb-external-sep"> · </span>');
     }
     return provider.plan ? escapeHtml(provider.plan) : t('已启用');
   };
@@ -593,8 +597,13 @@ export function renderExternal() {
     .join('');
 }
 
-// 宠物模块右侧数据：六种口径可选（≡ 菜单切换），标签与数值联动
-const PET_STAT_DEFS = {
+// 右侧数据口径：标题行与宠物模块**共用同一份**定义（标题行 = 精简版宠物模块，
+// ≡ 菜单里能选的口径完全一致）。标签与数值联动；
+//   label   = ≡ 菜单里的完整名称（如「加油包余额」）
+//   display = 面板里的简称（如「余额」），缺省与 label 相同
+// refreshable 的口径额外挂一个手动刷新小图标（余额是唯一可刷新的：客户端活的
+// 加油包余额只能来自这条通路）。
+export const STAT_DEFS = {
   daily: {
     label: '今日消耗',
     value: () => {
@@ -625,19 +634,88 @@ const PET_STAT_DEFS = {
     }
   },
   balance: {
-    label: '余额',
+    label: '加油包余额',
+    display: '余额',
+    refreshable: true,
     value: () => {
       const yuan = boosterBalanceYuan(panel.lastWallet);
-      return yuan != null ? `¥${yuan.toFixed(2)}` : '--';
+      return yuan != null ? `¥${yuan.toFixed(2)}` : t('余额 --');
     }
   }
 };
 
+/** ≡ 菜单用的选项表（两个模块共用一份，菜单永远一致）；
+ *  可刷新的口径在菜单里点名「（手动刷新）」，其余口径都是自动更新 */
+export function statMenuOptions() {
+  return Object.entries(STAT_DEFS).map(([value, def]) => [
+    value,
+    def.refreshable ? `${t(def.label)}（${t('手动刷新')}）` : t(def.label)
+  ]);
+}
+
+/** 「点击跳转」的目标选项：标题行数据位与宠物小球共用一份（出口 utils.openDataLink） */
+export function dataLinkOptions() {
+  return [['none', t('无跳转')], ['console', t('控制台')], ['subscription', t('充值页')]];
+}
+
+/** 两个数据位（标题行 + 宠物模块）的**唯一刷新入口**。
+ *  它们共用 STAT_DEFS，凡是数据/状态到达的路径都必须调它——以前各调各的
+ *  renderPetStats，标题行漏刷过一次（数据到了还停在首帧的「统计中」，
+ *  进编辑模式碰巧重建才对）。别再新增只刷一个的调用点。 */
+export function renderStatSlots() {
+  renderHeaderStat();
+  renderPetStats();
+}
+
+/** 10-18 13:50 这样的短时间戳（数据时间提示用，跨平台手写避免时区歧义） */
+function formatClockTime(iso) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+/** 悬停提示：字段名（药丸里不显示）+ 跳转说明 + 余额口径的数据时间 */
+function balanceTooltip(def) {
+  const parts = [t(def.label)];
+  const link = panel.widgetConfig.modules.header?.dataLink;
+  if (link === 'console') parts.push(t('打开 Kimi Code 控制台'));
+  else if (link === 'subscription') parts.push(t('查看 / 充值额度'));
+  const at = panel.lastWalletFetchedAt;
+  // 桌面端余额是快照：数据时间必须标出来，别让人以为是实时数
+  if (def.refreshable && at) parts.push(`${t('数据时间')} ${formatClockTime(at)}（${t('快照')}）`);
+  return parts.join(' · ');
+}
+
+/** 数据位的数值槽：文本 + （可刷新口径的）刷新图标；两处口径共用这套渲染。
+ *  刷新图标只有「加油包余额」口径才出现（其他口径本来就会自动更新） */
+function paintStatValue(textEl, def, refreshBtn) {
+  if (textEl) textEl.textContent = def.value();
+  if (refreshBtn) refreshBtn.hidden = !def.refreshable;
+}
+
 export function renderPetStats() {
   if (!panel.els?.petTotal) return;
-  const def = PET_STAT_DEFS[panel.widgetConfig.modules.pet?.stat] || PET_STAT_DEFS.daily;
-  if (panel.els.petLabel) panel.els.petLabel.textContent = t(def.label);
-  panel.els.petTotal.textContent = def.value();
+  const def = STAT_DEFS[panel.widgetConfig.modules.pet?.stat] || STAT_DEFS.daily;
+  if (panel.els.petLabel) panel.els.petLabel.textContent = t(def.display || def.label);
+  paintStatValue(panel.els.petTotalText || panel.els.petTotal, def, panel.els.petRefresh);
+}
+
+/** 标题行右侧数据位：与宠物模块同一套口径（≡ 菜单各自选，互不影响）。
+ *  药丸里是「字段名 + 数额」——宽度够时都显示，面板窄了先丢字段名（CSS 容器查询）。 */
+export function renderHeaderStat() {
+  if (!panel.els?.headerStatValue) return;
+  const key = panel.widgetConfig.modules.header?.stat || 'balance';
+  const def = STAT_DEFS[key] || STAT_DEFS.balance;
+  if (panel.els.headerStatLabel) panel.els.headerStatLabel.textContent = t(def.display || def.label);
+  // 可点标记跟着「点击数据跳转」的设置走（与宠物小球同一套语义）：
+  // 配了 none 就不可点，配了目标就整颗药丸可点
+  const linkable = panel.widgetConfig.modules.header?.dataLink !== 'none';
+  if (panel.els.headerStat) {
+    panel.els.headerStat.dataset.link = linkable ? '1' : '';
+    panel.els.headerStat.title = balanceTooltip(def);
+  }
+  paintStatValue(panel.els.headerStatText || panel.els.headerStatValue, def, panel.els.headerRefresh);
 }
 
 /* ---------- 额度重置倒计时与参照线 ---------- */

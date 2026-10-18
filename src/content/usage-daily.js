@@ -9,7 +9,7 @@
 
 import * as KimiCliUsage from '../cli-usage.js';
 import { panel } from './panel-state.js';
-import { renderChart, renderAgents, renderPetStats, renderExternal } from './render.js';
+import { renderChart, renderAgents, renderStatSlots, renderExternal } from './render.js';
 
 const CLI_REFRESH_AFTER_TURN_MS = 1_500;
 const CLI_REFRESH_STALE_MS = 60_000;
@@ -41,7 +41,7 @@ export async function loadUsageDaily({ refreshIfStale = false } = {}) {
       : {};
     renderChart();
     renderAgents();
-    renderPetStats();
+    renderStatSlots();
     const lastScannedAt = Date.parse(status?.lastScannedAt || '');
     if (
       refreshIfStale &&
@@ -54,7 +54,7 @@ export async function loadUsageDaily({ refreshIfStale = false } = {}) {
   } catch (error) {
     panel.cliUsageConnected = false;
     renderChart();
-    renderPetStats();
+    renderStatSlots();
   }
 }
 

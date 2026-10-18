@@ -9,7 +9,8 @@ import {
   parseDeepSeek,
   parseKimiApi,
   parseZhipu,
-  parseMiniMax
+  parseMiniMax,
+  parseStepFun
 } from '../src/providers.js';
 
 test('DeepSeek 只取人民币余额并拆分赠送/充值', () => {
@@ -99,14 +100,33 @@ test('MiniMax model_remains：无 general 取第一条；base_resp 非零报接�
   );
 });
 
-test('四家 provider 都有国内端点与凭据提示', () => {
-  assert.deepEqual(Object.keys(PROVIDERS), ['deepseek', 'kimiapi', 'zhipu', 'minimax']);
+test('阶跃星辰 StepFun：balance/充值/赠送三元映射，缺字段报错', () => {
+  const result = parseStepFun({
+    object: 'account',
+    type: 'prepaid',
+    balance: 13.23,
+    total_cash_balance: 50,
+    total_voucher_balance: 26
+  });
+  assert.equal(result.kind, 'balance');
+  assert.equal(result.currency, '¥');
+  assert.equal(result.total, 13.23);
+  assert.equal(result.paid, 50);
+  assert.equal(result.granted, 26);
+  // 字符串数字也认（接口返回 float，宽松起见不挑类型）
+  assert.equal(parseStepFun({ balance: '6.70', total_cash_balance: '5.70', total_voucher_balance: '1' }).total, 6.7);
+  assert.throws(() => parseStepFun({ object: 'account' }), /余额/);
+});
+
+test('五家 provider 都有国内端点与凭据提示', () => {
+  assert.deepEqual(Object.keys(PROVIDERS), ['deepseek', 'kimiapi', 'zhipu', 'minimax', 'stepfun']);
   for (const provider of Object.values(PROVIDERS)) {
     assert.match(provider.origin, /^https:\/\//);
     assert.ok(provider.hint.length > 0);
   }
   assert.equal(PROVIDERS.zhipu.origin, 'https://open.bigmodel.cn');
   assert.equal(PROVIDERS.kimiapi.origin, 'https://api.moonshot.cn');
+  assert.equal(PROVIDERS.stepfun.origin, 'https://api.stepfun.com');
 });
 
 /* ---------- 客户端供应商的识别与分类 ----------
@@ -129,8 +149,12 @@ test('按域名识别适配器：子域、大小写、路径都不影响', () =>
   assert.equal(adapterForBaseUrl('https://API.MOONSHOT.CN/v1')?.adapterId, 'kimiapi');
   assert.equal(adapterForBaseUrl('https://open.bigmodel.cn/api/paas/v4')?.adapterId, 'zhipu');
   assert.equal(adapterForBaseUrl('https://www.minimaxi.com/v1')?.adapterId, 'minimax');
+  // Step Plan 的 base_url 带路径，也只认域名（用户真实配置就是这样）
+  assert.equal(adapterForBaseUrl('https://api.stepfun.com/step_plan/v1')?.adapterId, 'stepfun');
   // 未适配的域名不做猜测：各家的余额路径/鉴权/字段都不一样，猜就是误报
-  assert.equal(adapterForBaseUrl('https://api.stepfun.com/step_plan/v1'), null);
+  // （小米 MiMo 只有平台 Cookie 用法，明确不进适配表）
+  assert.equal(adapterForBaseUrl('https://api.xiaomimimo.com/v1'), null);
+  assert.equal(adapterForBaseUrl('https://api.stepfun.ai/step_plan/v1'), null);
   assert.equal(adapterForBaseUrl('http://127.0.0.1:11434/v1'), null);
 });
 
@@ -142,12 +166,20 @@ test('三类分类：已接入 / 未适配 / 客户端托管账号', () => {
   assert.equal(supported.adapterId, 'deepseek');
   assert.equal(supported.host, 'api.deepseek.com');
 
-  // 名字带空格、大小写混杂也要认出来（真实数据里就是这样）
-  const weirdName = classifyClientProvider({
+  // 名字带空格、大小写混杂也要认出来（真实数据里就是这样）——Step Plan 已接入
+  const stepPlan = classifyClientProvider({
     id: 'StepFun Step Plan', type: 'openai', base_url: 'https://api.stepfun.com/step_plan/v1', has_api_key: true
   });
-  assert.equal(weirdName.kind, 'unsupported');
-  assert.equal(weirdName.host, 'api.stepfun.com');
+  assert.equal(stepPlan.kind, 'supported');
+  assert.equal(stepPlan.adapterId, 'stepfun');
+  assert.equal(stepPlan.host, 'api.stepfun.com');
+
+  // 小米 MiMo：只有平台登录 Cookie 用法，无 key 可达的余额端点——明确未适配
+  const xiaomi = classifyClientProvider({
+    id: 'Xiaomi', type: 'openai', base_url: 'https://api.xiaomimimo.com/v1', has_api_key: true
+  });
+  assert.equal(xiaomi.kind, 'unsupported');
+  assert.equal(xiaomi.host, 'api.xiaomimimo.com');
 
   // 客户端托管账号：额度走 /api/v1/oauth/usage，面板顶部已在显示，不重复列
   const managed = classifyClientProvider({

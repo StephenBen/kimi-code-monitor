@@ -14,6 +14,9 @@ const sessionSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'content
 const quotaSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'content', 'quota.js'), 'utf8');
 const usageDailySource = fs.readFileSync(path.join(__dirname, '..', 'src', 'content', 'usage-daily.js'), 'utf8');
 const panelStateSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'content', 'panel-state.js'), 'utf8');
+const metricsSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'metrics.js'), 'utf8');
+const utilsSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'content', 'utils.js'), 'utf8');
+const bridgeSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'panel-app', 'bridge.js'), 'utf8');
 const cssSource = fs.readFileSync(path.join(__dirname, '..', 'content.css'), 'utf8');
 
 test('切换会话游标固定归零：服务端不补发历史，数据由快照与本地汇总恢复', () => {
@@ -197,11 +200,94 @@ test('volatile WebSocket 帧复用 durable seq 时不会被游标误删', () => 
 });
 
 test('宠物灰红外观独立于 Rive 动作，恢复时默认回蓝色', () => {
-  assert.match(petSource, /status === 'offline' \|\| status === 'unauthorized'/);
-  assert.match(petSource, /status === 'ratelimit'/);
+  // 外观映射唯一：statusAppearance（metrics）是灯点与宠物球共用的那份
+  assert.match(metricsSource, /function statusAppearance\(status\)[\s\S]*?'off'[\s\S]*?'warn'[\s\S]*?'sub'[\s\S]*?'idle'[\s\S]*?'work'/);
+  // 宠物球把五档语义折进素材仅有的三套外观（灰/蓝/红）
+  assert.match(petSource, /import \{ statusAppearance \} from '\.\.\/metrics\.js'/);
+  assert.match(petSource, /const appearance = statusAppearance\(status\)/);
+  assert.match(petSource, /appearance === 'off'\) return 'gray'/);
+  assert.match(petSource, /appearance === 'warn'\) return 'red'/);
   assert.match(petSource, /panel\.els\.petCanvas\.dataset\.appearance = petAppearanceForStatus\(petStatus\)/);
   assert.match(cssSource, /\.ksb-pet-canvas\[data-appearance="gray"\]/);
   assert.match(cssSource, /\.ksb-pet-canvas\[data-appearance="red"\]/);
+});
+
+test('标题行 = 精简版宠物模块：数据口径与外观都共用同一份', () => {
+  // 右侧口径：一份 STAT_DEFS，菜单选项从它派生（两个 ≡ 菜单永远一致）
+  assert.match(renderSource, /export const STAT_DEFS = \{/);
+  assert.match(renderSource, /export function statMenuOptions\(\)/);
+  assert.match(widgetSource, /menuOpts\('stat', statMenuOptions\(\), header\.stat\)/);
+  assert.match(widgetSource, /menuOpts\('stat', statMenuOptions\(\), mod\.stat\)/);
+  // 渲染：标题行与宠物各调一次共享定义，没有第二套口径表
+  assert.match(renderSource, /export function renderHeaderStat\(\)[\s\S]*?STAT_DEFS\[key\]/);
+  assert.match(renderSource, /export function renderPetStats\(\)[\s\S]*?STAT_DEFS\[panel\.widgetConfig\.modules\.pet\?\.stat\]/);
+  // 灯点类名来自共享映射（不是各自写死 ksb-<status>）
+  assert.match(renderSource, /ksb-status-dot ksb-dot-\$\{statusAppearance\(display\)\}/);
+  // 手动刷新小图标：内联 SVG、无边框、只在「加油包余额」口径出现；标题行贴数字
+  // 左侧，宠物模块贴字段名右侧（与 10px 字段名同字号）
+  assert.match(renderSource, /refreshable: true/);
+  assert.match(renderSource, /label: '加油包余额',\n\s*display: '余额',/); // 菜单全名、面板简称
+  assert.match(renderSource, /def\.refreshable \? `\$\{t\(def\.label\)\}（\$\{t\('手动刷新'\)\}）` : t\(def\.label\)/); // 菜单标「（手动刷新）」
+  assert.match(widgetSource, /const REFRESH_ICON = '<svg class="ksb-stat-refresh-icon"/);
+  assert.match(widgetSource, /class="ksb-stat-refresh" id="ksb-header-stat-refresh" title="\$\{t\('刷新余额'\)\}" hidden>\$\{REFRESH_ICON\}<\/button>\s*<span id="ksb-header-stat-text">/);
+  assert.match(widgetSource, /<span class="ksb-quota-label" id="ksb-pet-label">\$\{t\('今日消耗'\)\}<\/span>\s*<button type="button" class="ksb-stat-refresh" id="ksb-pet-stat-refresh"/);
+  // hidden 属性必须压过 display:inline-flex，否则图标在非余额口径也一直显形（踩过）
+  assert.match(cssSource, /\.ksb-stat-refresh\[hidden\] \{\s*display: none;/);
+  // 标题行药丸：右边距固定（auto 顶到行尾）、数额变长时向左生长、绝不越界
+  assert.match(cssSource, /\.ksb-header-stat \{[\s\S]*?margin-left: auto;[\s\S]*?flex-shrink: 0;[\s\S]*?background: var\(--ksb-fill-2\);[\s\S]*?border-radius: 100px;/);
+  // 药丸里是「字段名 + 数额」：字段名是第一个让位的（面板 ≤220px 整体隐藏，行内再挤
+  // 就它自己先被压没），数额一步不让；名称同时进悬停提示，隐藏后信息不丢
+  assert.match(widgetSource, /id="ksb-header-stat-label"/);
+  assert.match(renderSource, /headerStatLabel\.textContent = t\(def\.display \|\| def\.label\)/);
+  assert.match(cssSource, /\.ksb-header-stat-label \{[\s\S]*?flex: 0 100 auto;[\s\S]*?overflow: hidden;/);
+  assert.match(cssSource, /@container \(max-width: 220px\) \{\s*\.ksb-header-stat-label \{ display: none; \}/);
+  assert.doesNotMatch(widgetSource, /showBalance/); // 老开关已被口径选择取代
+  assert.doesNotMatch(cssSource, /\.ksb-balance/); // 老药丸类名并入 .ksb-header-stat
+});
+
+test('「点击数据跳转」：标题行与宠物小球共用一份选项与出口', () => {
+  // 出口唯一：utils.openDataLink，两处都调它（不许各写一遍 if/else）
+  assert.match(utilsSource, /export function openDataLink\(link\)[\s\S]*?console[\s\S]*?subscription/);
+  assert.match(petSource, /openDataLink\(panel\.widgetConfig\.modules\.pet\?\.ballLink\)/);
+  assert.match(widgetSource, /openDataLink\(panel\.widgetConfig\.modules\.header\?\.dataLink\)/);
+  // 选项表也共用一份（含「无跳转」，两边都能选）
+  assert.match(renderSource, /export function dataLinkOptions\(\)[\s\S]*?'none'[\s\S]*?'console'[\s\S]*?'subscription'/);
+  assert.match(widgetSource, /menuOpts\('dataLink', dataLinkOptions\(\), header\.dataLink\)/);
+  assert.match(widgetSource, /menuOpts\('ballLink', dataLinkOptions\(\), mod\.ballLink/);
+  // 菜单文案：不再是「余额点击跳转」
+  assert.match(widgetSource, /t\('点击数据跳转'\)/);
+  assert.doesNotMatch(widgetSource, /balanceLink/);
+});
+
+test('模块菜单宽度不累积：打开前先归零 left/top（shrink-to-fit 正反馈）', () => {
+  assert.match(widgetSource, /menu\.style\.left = '0px';\s*menu\.style\.top = '0px';\s*menu\.innerHTML = moduleMenuHTML\(id\);/);
+  assert.match(cssSource, /\.ksb-edit-menu \{[\s\S]*?max-width: 190px;/);
+});
+
+test('外部账户行的降级阶梯：前缀先没 → 名称尾省略 → 数字永不动', () => {
+  // ① 面板过窄（≤160px）整体隐藏类型前缀
+  assert.match(cssSource, /@container \(max-width: 160px\) \{\s*\.ksb-external-kind \{\s*display: none;/);
+  // ① 行内挤压时数值区优先让位（shrink 100），区内前缀比数字先让（同样 100）
+  assert.match(cssSource, /\.ksb-external-value \{[\s\S]*?flex: 0 100 auto;/);
+  assert.match(cssSource, /\.ksb-external-kind \{[\s\S]*?flex: 0 100 auto;/);
+  // ② 名称优先级最低：可收缩 + 尾部省略
+  assert.match(cssSource, /\.ksb-external-name \{[\s\S]*?flex: 0 1 auto;[\s\S]*?text-overflow: ellipsis;/);
+  // ③ 数字与单位不可动：shrink 0 + nowrap（没有省略号）
+  assert.match(cssSource, /\.ksb-external-amount \{[\s\S]*?flex: 0 0 auto;[\s\S]*?white-space: nowrap;/);
+  // 结构：前缀与数字各自成 span，否则 CSS 无法分层让位
+  assert.match(renderSource, /<span class="ksb-external-kind">[\s\S]*?<span class="ksb-external-amount">/);
+  assert.doesNotMatch(cssSource, /\.ksb-external-name \{[^}]*flex-shrink: 0;/); // 旧：名字永不收缩
+  assert.doesNotMatch(cssSource, /\.ksb-external-value \{[^}]*text-overflow: ellipsis;/); // 数字不省略
+});
+
+test('两个数据位共用一个刷新入口：数据到达时标题行不许漏刷', () => {
+  // 曾经只调 renderPetStats，标题行停在首帧的「统计中」直到进编辑模式才碰巧重建
+  assert.match(renderSource, /export function renderStatSlots\(\) \{\s*renderHeaderStat\(\);\s*renderPetStats\(\);/);
+  assert.match(bridgeSource, /renderStatSlots\(\);/); // 长期统计到达 → 两个数据位一起刷
+  assert.match(usageDailySource, /renderStatSlots\(\);/); // 扩展侧同样
+  // 数据到达路径上不许再有只刷宠物一个的调用点
+  assert.doesNotMatch(bridgeSource, /(?<!Stat)renderPetStats\(\)/);
+  assert.doesNotMatch(usageDailySource, /(?<!Stat)renderPetStats\(\)/);
 });
 
 test('Stars 只由同一会话的真实 turn 生命周期触发', () => {

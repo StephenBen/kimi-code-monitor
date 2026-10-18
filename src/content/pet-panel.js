@@ -9,7 +9,8 @@
  */
 
 import { panel } from './panel-state.js';
-import { PET_ANSWER_STATUSES, CONSOLE_URL, SUBSCRIPTION_URL } from './utils.js';
+import { statusAppearance } from '../metrics.js';
+import { PET_ANSWER_STATUSES, openDataLink } from './utils.js';
 import { statusText } from '../i18n.js';
 import { getDisplayedAgentStatus } from './render.js';
 import { create as createRoamPet } from '../pet/sprites.js';
@@ -123,9 +124,12 @@ export function setPetStatusSince(timestamp) {
 
 /* ---------- Rive 吉祥物 ---------- */
 
+// 外观映射的唯一来源是 metrics 的 statusAppearance（标题行灯点共用同一份）：
+// 球素材只有灰/蓝/红三套外观，把五档语义折进这三档——off→灰、warn→红、其余→蓝
 function petAppearanceForStatus(status) {
-  if (status === 'offline' || status === 'unauthorized') return 'gray';
-  if (status === 'ratelimit') return 'red';
+  const appearance = statusAppearance(status);
+  if (appearance === 'off') return 'gray';
+  if (appearance === 'warn') return 'red';
   return 'blue';
 }
 
@@ -314,10 +318,8 @@ export function petStart() {
     panel.els.petCanvas.addEventListener('click', (event) => {
       event.stopPropagation();
       petHandleClick();
-      const link = panel.widgetConfig.modules.pet?.ballLink;
-      if (link === 'console' || link === 'subscription') {
-        window.open(link === 'console' ? CONSOLE_URL : SUBSCRIPTION_URL, '_blank');
-      }
+      // 跳转目标与标题行数据位共用同一份逻辑（utils.openDataLink）
+      openDataLink(panel.widgetConfig.modules.pet?.ballLink);
     });
     petClickBoundCanvas = panel.els.petCanvas;
   }

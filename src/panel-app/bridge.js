@@ -45,7 +45,7 @@ import {
   renderAll,
   renderAgents,
   renderChart,
-  renderPetStats,
+  renderStatSlots,
   renderExternal,
   updateBalance,
   updateProgress,
@@ -326,22 +326,26 @@ function handleQuota(msg) {
     updateResetText('week', parseResetTime(week.resetAt));
   }
   /* 余额双源（两边形状不同，boosterBalanceYuan 都认）：
-   * - msg.extraUsage：kap 活数据（balanceCents，单位分），随额度消息每 60s 到达；
-   * - quota.wallet：wallet.js 快照（web API 形状，安装时 / 技能「刷新余额」写入）。
+   * - msg.extraUsage **为真值对象** = kap 给了活余额（balanceCents，单位分）；
+   * - quota.wallet = wallet.js 快照（web API 形状，安装时 / 技能「刷新余额」写入）。
+   * kap 对本机账户实测恒返回 extraUsage: null —— 那是「kap 不提供」，**不是「账户
+   * 没有钱包」**（官方 API 里钱包明明有余额），所以 null/缺席一律回退快照；快照
+   * 文件的存在本身就证明账户有钱包（fetch-wallet 没有钱包时不写文件）。
    * 活数据到达即以其为准并记时间戳；快照只在活数据未到位、或用户刚刷新过
-   * （msg.walletFetchedAt 比上次活数据新）时兜底。消息里两者都缺席时**不清空**
-   * ——沿用上次成功值，与外部账户「失败沿用旧数」同口径。
-   * 曾经的 bug：`updateBalance(quota.wallet ?? null)` 在只带 usages 的额度消息
-   * （每 60s 一条）里把余额清成「--」，再被快照轮询短暂恢复——用户看到的就是
-   * 余额窗口闪烁 / 不管用。 */
-  if ('extraUsage' in msg) {
+   * （msg.walletFetchedAt 比上次活数据新）时兜底。两边都没有时**不清空**——
+   * 沿用上次成功值，与外部账户「失败沿用旧数」同口径。
+   * 曾经的 bug：`'extraUsage' in msg` 把 null 当成活数据，`updateBalance(null)`
+   * 每 60s 把余额清成「--」，快照被永久压制——窗口永远显示「余额 --」。 */
+  if (msg.extraUsage) {
     liveBalanceAt = Date.now();
     updateBalance(msg.extraUsage);
     return;
   }
   if ('wallet' in quota) {
     const snapshotAt = Date.parse(msg.walletFetchedAt || '') || 0;
-    if (!liveBalanceAt || snapshotAt > liveBalanceAt) updateBalance(quota.wallet);
+    if (!liveBalanceAt || snapshotAt > liveBalanceAt) {
+      updateBalance(quota.wallet, msg.walletFetchedAt);
+    }
   }
 }
 
@@ -407,7 +411,7 @@ export function refreshDailyChart() {
   if (Object.keys(merged).length > 0) panel.cliUsageConnected = true;
   renderChart();
   renderAgents();
-  renderPetStats();
+  renderStatSlots();
 }
 
 function handleStatus(msg) {
@@ -543,7 +547,7 @@ function handleSessionSwitch(msg) {
   }
 
   renderAll();
-  renderPetStats();
+  renderStatSlots();
 }
 
 // 外部账户：唯一来源是 direct.js 的实时抓取（面板直连客户端自己的 provider

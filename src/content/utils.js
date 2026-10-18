@@ -51,6 +51,14 @@ export const PET_ANSWER_STATUSES = ['thinking', 'executing', 'replying', 'subage
 export const CONSOLE_URL = 'https://www.kimi.com/code/console';
 export const SUBSCRIPTION_URL = 'https://www.kimi.com/membership/subscription?tab=quota';
 
+// 「点击跳转」的唯一出口：标题行的数据位与宠物模块的小球共用这一份逻辑
+// （配置值 dataLink：none 不跳 / console 控制台 / subscription 充值页）。
+// 之前两处各写一遍 if/else，改动容易漏一边——统一到这里。
+export function openDataLink(link) {
+  if (link === 'console') window.open(CONSOLE_URL, '_blank');
+  else if (link === 'subscription') window.open(SUBSCRIPTION_URL, '_blank');
+}
+
 /* ---------- Remote Control（kimi rc）适配 ----------
  * RC 页面挂在云端中继（code-rc.kimi.com）的 /devices/<id>/ 前缀下，
  * REST/WS 必须带此前缀才会被路由回本机服务器；本机/LAN 直连时为空串。

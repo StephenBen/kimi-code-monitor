@@ -65,6 +65,8 @@ export const panel = {
   lastQuotaPct: { '5h': null, week: null, month: null },
   quotaResetAt: { '5h': null, week: null, month: null },
   lastWallet: null,
+  // 余额快照的写入时间（桌面端余额是快照制，悬停提示要标出它有多旧）
+  lastWalletFetchedAt: '',
   // 本地 CLI 长期统计缓存与连接状态
   usageDailyCache: {},
   usageHourlyCache: {},
@@ -221,7 +223,9 @@ export function quotaPollingWanted() {
   const quotaVisible = ['quota5h', 'quotaWeek'].some(
     (id) => modules[id]?.show !== 'hidden'
   );
-  const balanceVisible = modules.header?.show !== 'hidden' && modules.header?.showBalance !== false;
+  // 余额现在是两个数据位的一种口径（stat === 'balance' 才真的显示余额），
+  // 与宠物模块的判定同口径
+  const balanceVisible = modules.header?.show !== 'hidden' && modules.header?.stat === 'balance';
   const petBalanceVisible =
     modules.pet?.show !== 'hidden' && modules.pet?.stat === 'balance';
   return quotaVisible || balanceVisible || petBalanceVisible;

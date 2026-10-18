@@ -310,6 +310,18 @@ function boosterBalanceYuan(wallet) {
 
 /* ---------- Widget 模块配置（左下面板模块化） ---------- */
 
+/** 状态 → 外观语义。**标题行灯点与宠物球共用这一份映射**——它们本来就是同一
+ *  个底子的两种呈现（标题行 = 精简版宠物模块），映射唯一，两边永远同色同义。
+ *  灯点直接拿 appearance 当类名（.ksb-dot-<appearance>）；宠物球素材只有
+ *  灰/蓝/红三套外观，由 pet-panel 把 appearance 折进这三档（见 petApplyAppearance）。 */
+function statusAppearance(status) {
+  if (status === 'offline' || status === 'unauthorized') return 'off';
+  if (status === 'ratelimit') return 'warn';
+  if (status === 'subagent') return 'sub';
+  if (status === 'idle') return 'idle';
+  return 'work'; // thinking / executing / replying
+}
+
 // 模块 id 即排序默认值；header 是标题行（固定整宽，高度与其他模块不同）
 // 注：quotaMonth（本月额度）暂时下线——web token 方案不理想，找到更干净的通路前隐藏
 const WIDGET_MODULE_IDS = [
@@ -318,9 +330,11 @@ const WIDGET_MODULE_IDS = [
 ];
 const WIDGET_SHOW_STATES = ['full', 'mini', 'hidden'];
 const CHART_RANGES = ['day', 'week', 'month'];
-const PET_STATS = ['daily', 'input', 'output', 'cache', 'speed', 'balance'];
+// 数据位口径（标题行与宠物模块共用）：daily/input/output/cache/speed/balance
+const WIDGET_STAT_KEYS = ['daily', 'input', 'output', 'cache', 'speed', 'balance'];
 const BALL_LINKS = ['none', 'console', 'subscription'];
-const BALANCE_LINKS = ['subscription', 'console'];
+// 「点击跳转」目标（标题行数据位与宠物小球共用一份）：none 不跳 / console / 充值页
+const DATA_LINKS = ['none', 'console', 'subscription'];
 // 额度重置时间：countdown 倒计时（3d5h）/ absolute 具体时间（08-05 15:00）
 const QUOTA_RESET_FORMATS = ['countdown', 'absolute'];
 
@@ -328,7 +342,7 @@ function defaultWidgetConfig() {
   return {
     version: 3,
     modules: {
-      header: { show: 'hidden', span: 2, showBalance: true, balanceLink: 'subscription' },
+      header: { show: 'hidden', span: 2, stat: 'balance', dataLink: 'subscription' },
       input: { show: 'full', span: 1 },
       cache: { show: 'full', span: 1 },
       output: { show: 'full', span: 1 },
@@ -360,7 +374,7 @@ function normalizeWidgetConfig(raw) {
     rawModules.header = {
       show: legacy.showInMini === true ? 'mini' : legacy.showInMini === false ? 'full' : undefined,
       showBalance: legacy.showBalance,
-      balanceLink: legacy.balanceLink
+      dataLink: legacy.balanceLink || legacy.dataLink
     };
   }
   // v2 → v3：宠物默认从半宽改为全宽（仅迁移一次，之后的手动调整不受影响）
@@ -380,12 +394,16 @@ function normalizeWidgetConfig(raw) {
     if (entry.span == null) normalized.span = fallback.span;
     if (id === 'header') {
       normalized.span = 2;
-      normalized.showBalance = typeof entry.showBalance === 'boolean'
-        ? entry.showBalance
-        : fallback.showBalance;
-      normalized.balanceLink = BALANCE_LINKS.includes(entry.balanceLink)
-        ? entry.balanceLink
-        : fallback.balanceLink;
+      // 右侧数据口径：与宠物模块同一套选项（标题栏 = 精简版宠物模块）。
+      // 迁移：老配置只有 showBalance —— 显式关掉余额的用户落到「今日消耗」，
+      // 其余（开着余额的，含没写过这个键的）保持余额不变
+      normalized.stat = WIDGET_STAT_KEYS.includes(entry.stat)
+        ? entry.stat
+        : (entry.showBalance === false ? 'daily' : fallback.stat);
+      // 迁移：老配置只有 balanceLink（当时只有充值页/控制台两档），沿用它
+      normalized.dataLink = DATA_LINKS.includes(entry.dataLink)
+        ? entry.dataLink
+        : (DATA_LINKS.includes(entry.balanceLink) ? entry.balanceLink : fallback.dataLink);
     }
     if (id === 'usageChart') {
       normalized.chartRange = CHART_RANGES.includes(entry.chartRange)
@@ -393,7 +411,7 @@ function normalizeWidgetConfig(raw) {
         : fallback.chartRange;
     }
     if (id === 'pet') {
-      normalized.stat = PET_STATS.includes(entry.stat) ? entry.stat : fallback.stat;
+      normalized.stat = WIDGET_STAT_KEYS.includes(entry.stat) ? entry.stat : fallback.stat;
       normalized.sidebarTidy = typeof entry.sidebarTidy === 'boolean'
         ? entry.sidebarTidy
         : fallback.sidebarTidy;
@@ -472,17 +490,19 @@ export {
   modelRows,
   normalizeUsage,
   normalizeWidgetConfig,
-  PET_STATS,
   pruneDailyUsage,
   pruneHourlyUsage,
   quotaPercentage,
   SECONDARY_MODEL_PLACEHOLDER,
+  statusAppearance,
   sumModelBuckets,
   sumUsageBetween,
   toNonNegativeInteger,
   totalInputTokens,
   usageDayKey,
   usageHourKey,
+  DATA_LINKS,
   WIDGET_MODULE_IDS,
-  WIDGET_SHOW_STATES
+  WIDGET_SHOW_STATES,
+  WIDGET_STAT_KEYS
 };

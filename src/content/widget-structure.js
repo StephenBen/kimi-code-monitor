@@ -10,11 +10,13 @@
 
 import { normalizeWidgetConfig } from '../metrics.js';
 import { panel, agentDisplayName, agentModelLabel, quotaPollingWanted } from './panel-state.js';
-import { escapeHtml, CONSOLE_URL, SUBSCRIPTION_URL } from './utils.js';
+import { escapeHtml, openDataLink } from './utils.js';
 import {
   renderAll,
   renderChart,
   renderPetStats,
+  dataLinkOptions,
+  statMenuOptions,
   updateBalance,
   updateProgress,
   updateResetText,
@@ -114,8 +116,13 @@ const MODULE_HTML = {
       <div class="ksb-pet-clip"><canvas class="ksb-pet-canvas" id="ksb-pet-canvas" width="112" height="112"></canvas></div>
       <div class="ksb-pet-stats">
         <div class="ksb-pet-total-row">
-          <span class="ksb-quota-label" id="ksb-pet-label">${t('今日消耗')}</span>
-          <span class="ksb-pet-total" id="ksb-pet-total">--</span>
+          <span class="ksb-pet-label-row">
+            <span class="ksb-quota-label" id="ksb-pet-label">${t('今日消耗')}</span>
+            <button type="button" class="ksb-stat-refresh" id="ksb-pet-stat-refresh" title="${t('刷新余额')}" hidden>${REFRESH_ICON}</button>
+          </span>
+          <span class="ksb-pet-total" id="ksb-pet-total">
+            <span id="ksb-pet-total-text">--</span>
+          </span>
         </div>
         <span class="ksb-pet-status" id="ksb-pet-status" data-status="idle"><span id="ksb-pet-status-text">${t('空闲')}</span><span class="ksb-pet-clock" id="ksb-pet-clock" hidden><span id="ksb-pet-clock-num"></span><span id="ksb-pet-ampm"></span></span></span>
       </div>
@@ -159,15 +166,27 @@ const MODULE_HTML = {
     </div>`
 };
 
-// 标题行是普通整宽模块，内容随配置（余额显隐、跳转目标）生成
+// 刷新图标用内联 SVG 而不是 ↻ 字形：字形在不同字号下基线会飘（10px 标题行与
+// 14px 宠物数字对不齐），SVG 按 em 缩放 + 居中对齐，两处都对得齐
+const REFRESH_ICON = '<svg class="ksb-stat-refresh-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M13.4 8a5.4 5.4 0 1 1-1.6-3.85" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M13.3 1.7v3.1h-3.1" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+// 标题行是普通整宽模块；右侧药丸是「字段名 + 数额」（宽度够时都显示，窄了先丢字段名，
+// 见 content.css 的容器查询），数额越长药丸越向左生长、右边距固定；
+// 口径与宠物模块同一套（≡ 菜单切换，标题行 = 精简版宠物模块）。
+// 余额口径额外带一个手动刷新的小图标（无边框，排在数字左侧）
 function headerModuleHTML() {
-  const toConsole = panel.widgetConfig.modules.header.balanceLink === 'console';
   return `
     <div class="ksb-header">
-      <span class="ksb-status-dot ksb-idle" id="ksb-status-dot"></span>
+      <span class="ksb-status-dot ksb-dot-idle" id="ksb-status-dot"></span>
       <span class="ksb-title" title="${t('点击重置并重新拉取数据')}"><span class="ksb-title-long">Kimi Code</span><span class="ksb-title-brief">Kimi</span></span>
       <span class="ksb-agent-status" id="ksb-agent-status">${t('空闲')}</span>
-      ${panel.widgetConfig.modules.header.showBalance ? `<span class="ksb-balance" id="ksb-balance" title="${toConsole ? t('打开 Kimi Code 控制台') : t('查看 / 充值额度')}">${t('余额 --')}</span>` : ''}
+      <span class="ksb-header-stat" id="ksb-header-stat">
+        <span class="ksb-header-stat-label" id="ksb-header-stat-label">${t('余额')}</span>
+        <span class="ksb-header-stat-value" id="ksb-header-stat-value">
+          <button type="button" class="ksb-stat-refresh" id="ksb-header-stat-refresh" title="${t('刷新余额')}" hidden>${REFRESH_ICON}</button>
+          <span id="ksb-header-stat-text">--</span>
+        </span>
+      </span>
     </div>`;
 }
 
@@ -181,16 +200,28 @@ function buildModule(id) {
     if (editing) openModuleMenu(id);
   });
   module.addEventListener('pointerdown', (event) => beginModuleDrag(event, module));
+  // 手动刷新小图标：标题行与宠物模块各有一个（余额口径才显示），
+  // 点一下立刻重新拉一次余额——扩展走后台真请求，桌面端重读快照文件
+  for (const button of module.querySelectorAll('.ksb-stat-refresh')) {
+    button.addEventListener('click', (event) => {
+      event.stopPropagation();
+      if (editing || button.classList.contains('spinning')) return;
+      button.classList.add('spinning');
+      deps.refreshBalance?.();
+      setTimeout(() => button.classList.remove('spinning'), 1200);
+    });
+  }
   if (id === 'header') {
-    const toConsole = panel.widgetConfig.modules.header.balanceLink === 'console';
     module.querySelector('.ksb-title').addEventListener('click', (event) => {
       event.stopPropagation();
       if (!editing) deps.manualRefresh();
     });
-    module.querySelector('.ksb-balance')?.addEventListener('click', (event) => {
+    // 点药丸按配置跳转（与宠物小球共用 utils.openDataLink 同一份逻辑）；
+    // ≡ 菜单可切换目标，只有余额口径之外的数据位才有意义——非余额口径药丸不可点
+    module.querySelector('.ksb-header-stat')?.addEventListener('click', (event) => {
       event.stopPropagation();
       if (editing) return;
-      window.open(toConsole ? CONSOLE_URL : SUBSCRIPTION_URL, '_blank');
+      openDataLink(panel.widgetConfig.modules.header?.dataLink);
     });
   }
   if (id === 'usageChart') {
@@ -348,7 +379,11 @@ function cacheElements() {
   panel.els = {
     widget,
     statusDot: byId('ksb-status-dot'),
-    balance: byId('ksb-balance'),
+    headerStat: byId('ksb-header-stat'),
+    headerStatLabel: byId('ksb-header-stat-label'),
+    headerStatValue: byId('ksb-header-stat-value'),
+    headerStatText: byId('ksb-header-stat-text'),
+    headerRefresh: byId('ksb-header-stat-refresh'),
     authBanner: byId('ksb-auth-banner'),
     authBannerText: byId('ksb-auth-banner-text'),
     regionFull: widget?.querySelector('.ksb-region-full'),
@@ -381,6 +416,8 @@ function cacheElements() {
     petAmpm: byId('ksb-pet-ampm'),
     petLabel: byId('ksb-pet-label'),
     petTotal: byId('ksb-pet-total'),
+    petTotalText: byId('ksb-pet-total-text'),
+    petRefresh: byId('ksb-pet-stat-refresh'),
     sparks: {
       input: byId('ksb-input-spark'),
       output: byId('ksb-output-spark'),
@@ -571,11 +608,13 @@ function menuOpts(kind, options, current) {
 function moduleMenuHTML(id) {
   if (id === 'header') {
     const header = panel.widgetConfig.modules.header;
+    // 右侧数据口径与宠物模块共用同一份选项（statMenuOptions）——两个菜单永远一致；
+    // 跳转目标也是同一份（dataLinkOptions），逻辑出口同为 utils.openDataLink
     return `
-      <div class="ksb-menu-label">${t('标题行')} · ${t('余额')}</div>
-      ${menuOpts('showBalance', [[true, t('显示')], [false, t('隐藏')]], header.showBalance)}
-      <div class="ksb-menu-label">${t('余额点击跳转')}</div>
-      ${menuOpts('balanceLink', [['subscription', t('充值页')], ['console', t('控制台')]], header.balanceLink)}
+      <div class="ksb-menu-label">${t('标题行')} · ${t('右侧数据')}</div>
+      ${menuOpts('stat', statMenuOptions(), header.stat)}
+      <div class="ksb-menu-label">${t('点击数据跳转')}</div>
+      ${menuOpts('dataLink', dataLinkOptions(), header.dataLink)}
     `;
   }
   const mod = panel.widgetConfig.modules[id];
@@ -598,8 +637,8 @@ function moduleMenuHTML(id) {
       <div class="ksb-menu-label">${t('重置时间显示')}</div>${menuOpts('resetFormat', [['countdown', t('倒计时')], ['absolute', t('具体时间')]], mod.resetFormat || 'countdown')}`
     : '';
   const statRow = id === 'pet'
-    ? `<div class="ksb-menu-label">${t('右侧数据')}</div>${menuOpts('stat', [['daily', t('今日消耗')], ['input', t('输入')], ['output', t('输出')], ['cache', t('缓存命中')], ['speed', t('速度')], ['balance', t('余额')]], mod.stat)}
-      <div class="ksb-menu-label">${t('点击小球跳转')}</div>${menuOpts('ballLink', [['none', t('无跳转')], ['console', t('控制台')], ['subscription', t('充值页')]], mod.ballLink || 'none')}`
+    ? `<div class="ksb-menu-label">${t('右侧数据')}</div>${menuOpts('stat', statMenuOptions(), mod.stat)}
+      <div class="ksb-menu-label">${t('点击小球跳转')}</div>${menuOpts('ballLink', dataLinkOptions(), mod.ballLink || 'none')}`
     : '';
   // 侧栏改造只作用于网页端侧栏；独立面板（桌面客户端注入）本就不生效
   // （applySidebarTidy 在 standaloneMode 下强制关闭），菜单里不显示这个死开关
@@ -658,6 +697,11 @@ function openModuleMenu(id) {
   menuModuleId = id;
   const menu = panel.els?.editMenu;
   if (!menu) return;
+  // 断掉 shrink-to-fit 的正反馈：绝对定位菜单的可用宽度由 left 决定，而 left 又按
+  // 上一次的宽度算——不归零就量，每开一次菜单宽一点（外部账户的长选项最明显）。
+  // 先把 left/top 归零再测量，每次的基准一致。
+  menu.style.left = '0px';
+  menu.style.top = '0px';
   menu.innerHTML = moduleMenuHTML(id);
   menu.hidden = false;
   // 锚定到对应模块的角标下方，横向不越出卡片
@@ -682,8 +726,10 @@ function hideModuleMenu() {
 
 function applyMenuOption(id, kind, value) {
   const next = JSON.parse(JSON.stringify(panel.widgetConfig));
-  if (kind === 'showBalance' || kind === 'balanceLink') {
-    next.modules.header[kind] = value === 'true' ? true : value === 'false' ? false : value;
+  // 标题行的余额显隐开关已由「右侧数据」口径取代（stat === 'balance' 即显示余额）；
+  // 跳转目标与宠物小球同一份语义（none/console/subscription），只是配置键各归各
+  if (kind === 'dataLink') {
+    next.modules.header.dataLink = value;
   } else if (kind === 'span') {
     next.modules[id].span = Number(value) === 2 ? 2 : 1;
   } else if (kind === 'pace') {

@@ -22,6 +22,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { classifyClientProvider } from '../../src/providers.js';
+import { kapAuthHeaders } from '../../src/kap-auth.mjs';
 
 /* ---------- 客户端服务（kap-server）定位 ---------- */
 
@@ -74,14 +75,17 @@ function listeningPorts() {
   return [...ports];
 }
 
-/** 逐个候选端口试探 /api/v1/meta：返回带 server_id 的那个才是客户端服务。 */
+/** 逐个候选端口试探 /api/v1/meta：返回带 server_id 的那个才是客户端服务。
+ *  带 kap 令牌（server.token）：客户端 2.x 起 /api/v1/* 全要鉴权，裸调 401；
+ *  读不到令牌时裸调（老客户端无鉴权，向后兼容）。 */
 async function findKap(portArg) {
   const candidates = portArg
     ? [Number(portArg)]
     : [...registryPorts(), ...listeningPorts()];
+  const headers = kapAuthHeaders();
   for (const port of candidates) {
     try {
-      const r = await fetch(`http://127.0.0.1:${port}/api/v1/meta`, { signal: AbortSignal.timeout(2000) });
+      const r = await fetch(`http://127.0.0.1:${port}/api/v1/meta`, { headers, signal: AbortSignal.timeout(2000) });
       if (!r.ok) continue;
       const body = await r.json();
       if (body?.data?.server_id) return { port, meta: body.data };
@@ -93,13 +97,17 @@ async function findKap(portArg) {
 }
 
 async function readProviders(port) {
-  const r = await fetch(`http://127.0.0.1:${port}/api/v1/providers`, { signal: AbortSignal.timeout(5000) });
+  const r = await fetch(`http://127.0.0.1:${port}/api/v1/providers`, {
+    headers: kapAuthHeaders(),
+    signal: AbortSignal.timeout(5000)
+  });
   const body = await r.json();
   return Array.isArray(body?.data?.items) ? body.data.items : [];
 }
 
 async function readProviderKey(port, id) {
   const r = await fetch(`http://127.0.0.1:${port}/api/v1/providers/${encodeURIComponent(id)}`, {
+    headers: kapAuthHeaders(),
     signal: AbortSignal.timeout(5000)
   });
   const body = await r.json();

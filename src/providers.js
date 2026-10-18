@@ -1,4 +1,4 @@
-/* 外部 provider 余额/额度抓取：DeepSeek、Kimi API、智谱、MiniMax。
+/* 外部 provider 余额/额度抓取：DeepSeek、Kimi API、智谱、MiniMax、阶跃星辰。
  * 全部走国内端点，纯 REST + Bearer key。每家一个独立 fetcher，
  * 统一输出 { kind: 'balance'|'plan', ... } 供「外部账户」模块渲染。
  * 参考 CodexBar 各 provider 文档的端点与字段映射。
@@ -166,6 +166,21 @@ function parseMiniMax(body) {
   return { kind: 'plan', plan, windows };
 }
 
+// 阶跃星辰 StepFun：GET /v1/accounts 返回账户余额（预付费 balance / 充值 / 赠送，
+// 单位元）。文档：platform.stepfun.com/docs/api-reference/accounts/get。
+// 注意客户端里的 provider 多配成 Step Plan（base_url 带 /step_plan/v1 路径），
+// 识别只认域名，余额端点固定用 apex 域的 /v1/accounts。
+function parseStepFun(body) {
+  if (body?.balance == null) throw noInfoError('响应中没有余额字段', body);
+  return {
+    kind: 'balance',
+    total: toMoney(body.balance),
+    granted: toMoney(body.total_voucher_balance),
+    paid: toMoney(body.total_cash_balance),
+    currency: '¥'
+  };
+}
+
 const PROVIDERS = {
   deepseek: {
     name: 'DeepSeek',
@@ -207,6 +222,16 @@ const PROVIDERS = {
       return parseMiniMax(
         await getJson('https://www.minimaxi.com/v1/token_plan/remains', key)
       );
+    }
+  },
+  stepfun: {
+    name: '阶跃星辰 StepFun',
+    typeLabel: 'API余额',
+    origin: 'https://api.stepfun.com',
+    hosts: ['api.stepfun.com'],
+    hint: 'platform.stepfun.com → API Keys',
+    async fetch(key) {
+      return parseStepFun(await getJson('https://api.stepfun.com/v1/accounts', key));
     }
   }
 };
@@ -269,7 +294,8 @@ const KimiExternalProviders = {
   parseDeepSeek,
   parseKimiApi,
   parseZhipu,
-  parseMiniMax
+  parseMiniMax,
+  parseStepFun
 };
 
 export {
@@ -281,5 +307,6 @@ export {
   parseKimiApi,
   parseZhipu,
   parseMiniMax,
+  parseStepFun,
   KimiExternalProviders
 };
