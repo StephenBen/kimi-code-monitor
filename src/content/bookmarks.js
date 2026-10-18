@@ -191,17 +191,32 @@ function turnQuestion(anchor) {
 // 渲染后 HTML（消毒）：剔除脚本/框架/控件与我们的注入物，去掉 on* 事件和
 // javascript: 链接。克隆节点自带页面的 class 与 data-v 属性，
 // 注入收藏页后 app 自己的样式表直接生效（markdown 标题/加粗/代码块原样还原）
-function sanitizeHtml(node) {
+//
+// 移除名单分三组：
+// - 执行/框架：script, iframe, object, embed, link, meta（原有）
+// - 页面级影响：base（改整页相对 URL 解析基准）、style（CSS 注入/全页遮挡）。
+//   收藏详情嵌在 kimi 页面文档里，这两个都能影响收藏页之外的呈现，
+//   而 markdown 渲染产物本身不需要它们
+// - SMIL 动画（animate/set/animateTransform/animateMotion）：可在运行时动态
+//   写入 on* 事件属性，静态扫描 on* 抓不到，源内容带 SMIL 即整体剔除
+export function sanitizeHtml(node) {
   const clone = node.cloneNode(true);
   clone
-    .querySelectorAll('script, iframe, object, embed, link, meta, .a-msg-ft, .kbm-star')
+    .querySelectorAll(
+      'script, iframe, object, embed, link, meta, base, style, ' +
+      'animate, set, animateTransform, animateMotion, ' +
+      '.a-msg-ft, .kbm-star'
+    )
     .forEach((el) => el.remove());
   for (const el of [clone, ...clone.querySelectorAll('*')]) {
     for (const attr of [...el.attributes]) {
       const isEvent = attr.name.startsWith('on');
-      const isJsUrl =
-        (attr.name === 'href' || attr.name === 'src') && /^\s*javascript:/i.test(attr.value);
-      if (isEvent || isJsUrl) el.removeAttribute(attr.name);
+      // javascript: / data:text/html 统一拦在所有属性上（含 xlink:href、
+      // formaction 等 URL 属性）：没有合法属性值需要以它们开头，而按名字
+      // 枚举 URL 属性难免漏（SVG <a> 的 xlink:href 就是漏网案例）。
+      // 只拦 data:text/html，图片的 data:image/* 不受影响
+      const isDangerousUrl = /^\s*(javascript:|data:text\/html)/i.test(attr.value);
+      if (isEvent || isDangerousUrl) el.removeAttribute(attr.name);
     }
   }
   // 体积收敛：删 <!----> 注释节点（app 渲染产物里占大头）。

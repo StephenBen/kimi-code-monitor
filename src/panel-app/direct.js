@@ -88,8 +88,20 @@ export function startDirectMode() {
     try {
       const r = await fetch(apiUrl('/api/v1/oauth/usage'));
       const body = await r.json();
-      const usages = body?.data?.quota?.usages;
-      if (usages) push({ v: 1, type: 'quota', quota: usages });
+      // kap 的 managed quota 形状（app.asar 实测）：{ data: { quota: { usages, extraUsage } } }。
+      // usages = { limit5h: {usedRatio, resetAt}, limit7d: {...} }；
+      // extraUsage = 加油包余额 { balanceCents（分）, totalCents, currency, ... }，
+      // 无加油包时是 null——曾经的 bug：这里只取 usages 把 extraUsage 丢掉，
+      // 面板余额只能靠安装时的 wallet.js 快照，永远不更新
+      const quota = body?.data?.quota;
+      const usages = quota?.usages;
+      if (usages) {
+        const msg = { v: 1, type: 'quota', quota: usages };
+        // extraUsage 键缺席（老客户端没有该字段）时不开键：bridge 据此回退
+        // wallet.js 快照，而不是把余额当成「没有钱包」清空
+        if (quota.extraUsage !== undefined) msg.extraUsage = quota.extraUsage;
+        push(msg);
+      }
     } catch (error) {
       // 实例暂不可达：下轮重试
     }

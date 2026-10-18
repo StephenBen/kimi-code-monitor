@@ -330,7 +330,11 @@ export async function markAccountNeedsReauth(accountId, accessToken) {
   hooks.invalidateQuotaCache(accountId);
 }
 
-// options：accountId 重新授权指定账户；forceNew 强制新建账户；label 新账户备注名
+// options：accountId 重新授权指定账户；forceNew 强制新建账户；label 新账户备注名。
+// 单飞语义（有意为之）：授权流进行中时，后续调用——包括带不同 options 的调用——
+// 复用当前流程的 promise，自己的 options 被忽略。想强制换一个流程走的调用方
+// （如 resetAndStartOAuth）须先递增 authRevision 作废在途流程并等它结束，
+// 否则拿到的就是旧流程的 promise。
 export function startOAuth(options = {}) {
   if (oauthStartPromise) return oauthStartPromise;
   oauthStartPromise = startOAuthInternal(options || {}).finally(() => {

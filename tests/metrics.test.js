@@ -116,6 +116,21 @@ test('钱包未启用时不展示接口中的伪余额', () => {
   }), 3.152507);
 });
 
+test('钱包双形状：kap 桌面端 extraUsage（分）与 web API（1e-8 元）都归一到元', () => {
+  // kap managedQuotaSchema.extraUsage：单位是分（app.asar 实测形状）
+  assert.equal(boosterBalanceYuan({
+    balanceCents: 1358,
+    totalCents: 5000,
+    monthlyChargeLimitEnabled: true,
+    currency: 'CNY'
+  }), 13.58);
+  // 余额为 0 是合法真值（不是「查不到」）——显示 ¥0.00 而非 --
+  assert.equal(boosterBalanceYuan({ balanceCents: 0, currency: 'CNY' }), 0);
+  // web API 形状不带 balanceCents，走原分支（不能被分 shape 误吞）
+  assert.equal(boosterBalanceYuan({ status: 'STATUS_ACTIVE', balance: { amountLeft: '0' } }), 0);
+  assert.equal(boosterBalanceYuan({ status: 'STATUS_ACTIVE', balance: { amountLeft: '500000000' } }), 5);
+});
+
 test('日期键按本地自然日且可字符串比较，修剪只保留近期桶', () => {
   const now = new Date('2026-07-30T15:00:00');
   assert.equal(usageDayKey(now), '2026-07-30');

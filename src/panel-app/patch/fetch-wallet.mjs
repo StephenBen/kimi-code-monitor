@@ -41,7 +41,13 @@ async function main() {
     console.error('用法: node fetch-wallet.mjs --out <wallet.js路径>');
     process.exit(1);
   }
-  const credPath = path.join(os.homedir(), '.kimi-code', 'credentials', 'kimi-code.json');
+  // 凭据位置尊重 KIMI_CODE_HOME（与 install.mjs 的 kimiHome 同口径）：
+  // 自定义根目录时 ~/.kimi-code 下没有凭据，写死 home 会静默跳过余额快照
+  const credPath = path.join(
+    process.env.KIMI_CODE_HOME || path.join(os.homedir(), '.kimi-code'),
+    'credentials',
+    'kimi-code.json'
+  );
   let token = '';
   try {
     token = String(JSON.parse(fs.readFileSync(credPath, 'utf8')).access_token || '');

@@ -1,5 +1,23 @@
 # 更新说明
 
+## v3.5.3（2026-10-18）
+
+### 修复
+
+- **桌面补丁余额窗口恢复实时更新**（用户反馈「不管用」）：kap-server 的 managed quota 把加油包余额放在 `quota.extraUsage`——单位是**分**、形状 `{balanceCents, totalCents, currency}`，与 web API 的 `booster_wallet`（`{status, balance:{amountLeft}}`，1e-8 元）完全不同。而 direct.js 的额度轮询只取了 `usages`、把 extraUsage 丢掉；bridge 的 handleQuota 又执行 `updateBalance(quota.wallet ?? null)`——每 60s 一条不带 wallet 的额度消息把余额清成「--」，再被 wallet.js 快照轮询短暂恢复，表现为窗口闪烁/不动。现在 direct.js 透传 extraUsage、`boosterBalanceYuan` 双形状解析（分与 1e-8 元都归一到元）、余额改双源逻辑（活数据优先并记时间戳，wallet.js 快照在活数据未到位或用户刚刷新过时兜底，消息里两者都缺席时不清空——沿用上次成功值）；fetch-wallet.mjs 补尊重 `KIMI_CODE_HOME`
+- **子代理总览支持同模型合并**（用户反馈「开 200 个代理就有 200 行」）：子代理按模型合并为一行，名称后标 ×N（200 个同模型代理从 200 行变 1 行），悬停列成员代理（上限 8 个 + 「等 N 个」）；分组键用显示名——`kimi-k2` 与 `kimi-code/k2` 剥前缀后同形不分成两行，`__secondary__` 有次级模型真名时归到真名组。主代理仍按模型分行（不参与合并），编辑模式隐藏某个代理后其模型组的用量与计数同步扣除。数据层仍是逐「代理 × 模型」一行不合并（面板计数、≡ 菜单、本地汇总都不受影响），合并只发生在渲染层。≡ 菜单的开关列表封顶滚动（代理多时不再弹出几千像素高）
+- **外部账户状态的时间注入贯穿到底**（v3.5.2 引入的 flaky 测试）：`fetchExternalAccount` 成功路径的 `fetchedAt` 与 `cacheEntry` 的 `at` 此前直接读真实时钟，测试推虚拟时钟时，若首末两次调用落在同一毫秒，「恢复后 fetchedAt 应更新」断言偶发失败（`tests/external-lastgood`，实测约 1/3 概率挂）。现在 `now` 从 `getExternalProvidersStatus` 一路透传进这两个函数，测试变为确定性通过
+- **收藏消毒器补页面级载体**：`<base>`（可改整页相对 URL 解析基准）与 `<style>`（CSS 注入 / 全页遮挡）此前的移除名单漏掉——收藏详情嵌在 kimi 页面文档里，这两个都能影响收藏页之外的呈现。SMIL 动画元素（`animate` / `set` / `animateTransform` / `animateMotion`）可在运行时动态写入 `on*` 事件属性、静态扫描抓不到，源内容带 SMIL 即整体剔除
+- **收藏消毒的 URL 检查改为全属性拦截**：从按名字枚举 `href` / `src` 改为对所有属性拦 `javascript:` 与 `data:text/html`——SVG `<a>` 的 `xlink:href` 曾是漏网案例；图片的 `data:image/*` 不受影响
+- **升级 jsdom 传递依赖 undici 至 8.12.2**，消除 3 个 high 级别开发依赖漏洞（仅影响开发机与 CI，不进发行包）
+
+### 其他
+
+- README（中英）数据与隐私章节披露：「本机回环」指 127.0.0.1/localhost 的任意端口，本机任意本地服务都被视为半可信来源，可触发设备授权流程、查询外部账户余额等白名单操作——本地客户端架构的固有取舍
+- README（中英）同步远端编辑：桌面端支持说明精简为一句、移除「会话标题自动生成」章节（功能本身不变——仍走官方实验 auto_session_title + 弹窗「复制提示词」，只是不再在 README 展开）
+- `sanitizeHtml` 导出并补 jsdom 行为测试（此前仅源码字符串断言）；`startOAuth` 注释固化单飞语义（进行中时后续调用的 options 被忽略）
+- 交接文档（HANDOFF，不进仓库）安全模型补回环半可信说明；新增「实测契约清单」子节——10 条对外部系统（kap-server / WS 服务端 / V2 列表 / 厂商端点）的实测行为假设及代码里的对应守卫
+
 ## v3.5.2（2026-09-28）
 
 ### 修复：options 标签页活跃热力图溢出卡片、盖住指标下拉框（issue #10，感谢 @Vte2 的详尽报告）

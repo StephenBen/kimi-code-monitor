@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { JSDOM } from 'jsdom';
 import {
   normalizeBookmarkStore,
+  sanitizeHtml,
   truncateTitle,
   isBookmarked,
   flattenBookmarks,
@@ -176,9 +178,12 @@ test('详情弹层 markdown 还原：收藏时存渲染后 HTML（消毒），�
   // 收藏时存消毒后的渲染 HTML
   assert.match(source, /html: turnHtml\(anchor\)/);
   assert.match(source, /function sanitizeHtml\(node\)/);
-  assert.match(source, /querySelectorAll\('script, iframe, object, embed, link, meta, \.a-msg-ft, \.kbm-star'\)/);
+  // 移除名单：执行/框架 + 页面级影响（base/style）+ SMIL 动态 on* 载体
+  assert.match(source, /querySelectorAll\(\s*'script, iframe, object, embed, link, meta, base, style, '\s*\+\s*'animate, set, animateTransform, animateMotion, '\s*\+\s*'\.a-msg-ft, \.kbm-star'\s*\)/);
   assert.match(source, /attr\.name\.startsWith\('on'\)/);
   assert.match(source, /javascript:/i);
+  // URL 类属性不再按名字枚举（xlink:href 曾漏），data:text/html 一并拦、data:image 放行
+  assert.match(source, /data:text\\?\/html/i);
   // 超长不存 HTML（回退纯文本）
   assert.match(source, /html\.length > HTML_LIMIT \? '' : html/);
   // 注释节点用 childNodes 递归删除（曾因 NodeIterator.currentNode 环境差异导致点击静默失败）
@@ -187,6 +192,48 @@ test('详情弹层 markdown 还原：收藏时存渲染后 HTML（消毒），�
   // 展示：有 HTML 走 .msg 包裹的 markdown 还原，无则纯文本兜底
   assert.match(source, /<div class="msg kbm-detail-text kbm-md">/);
   assert.match(contentCss, /\.kbm-detail-text\.kbm-md,[\s\S]*?white-space: normal/);
+});
+
+test('消毒行为：页面级载体与动态 on* 被剔除，markdown 原样保留', () => {
+  const dom = new JSDOM(`<div class="msg" id="src">
+    <h1 class="md-h1">标题</h1>
+    <p>正文 <strong>加粗</strong> <code>code</code></p>
+    <img src="data:image/png;base64,iVBORw0KGgo=" alt="图">
+    <a href="https://example.com/doc">链接</a>
+    <base href="https://evil.invalid/">
+    <style>.msg{position:fixed;inset:0;background:#fff}</style>
+    <script>alert(1)</script>
+    <iframe src="https://evil.invalid/"></iframe>
+    <p onclick="steal()">事件属性</p>
+    <a xlink:href="javascript:alert(1)">SVG 链接</a>
+    <object data="javascript:alert(1)"></object>
+    <form action="javascript:alert(1)"><input type="password"></form>
+    <svg><set attributeName="onbegin" to="alert(1)"/><circle r="5"/></svg>
+    <!-- 注释节点 -->
+  </div>`);
+  const out = sanitizeHtml(dom.window.document.getElementById('src'));
+  // markdown 结构与 data:image 保留（class 带入收藏页让 app 样式生效）
+  assert.match(out, /<h1 class="md-h1">标题<\/h1>/);
+  assert.match(out, /<strong>加粗<\/strong>/);
+  assert.match(out, /<code>code<\/code>/);
+  assert.match(out, /src="data:image\/png;base64,iVBORw0KGgo="/);
+  assert.match(out, /href="https:\/\/example\.com\/doc"/);
+  // 页面级载体：base/style
+  assert.doesNotMatch(out, /<base/i);
+  assert.doesNotMatch(out, /<style/i);
+  // 执行/框架
+  assert.doesNotMatch(out, /<script/i);
+  assert.doesNotMatch(out, /<iframe/i);
+  assert.doesNotMatch(out, /<object/i);
+  // on* 事件与 javascript:（含非枚举的 xlink:href）
+  assert.doesNotMatch(out, /onclick/);
+  assert.doesNotMatch(out, /onbegin/);
+  assert.doesNotMatch(out, /javascript:/i);
+  // SMIL 动画元素整体剔除，同棵 svg 里的静态图形保留
+  assert.doesNotMatch(out, /<set/i);
+  assert.match(out, /<circle r="5"/);
+  // data:text/html 拦、注释剥掉
+  assert.doesNotMatch(out, /<!--/);
 });
 
 test('生命周期：装配进 content.js，storage 变化联动，销毁清理全部注入物', () => {

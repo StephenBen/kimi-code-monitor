@@ -169,7 +169,7 @@ The extension uses its own OAuth token and never reads or writes Kimi Code CLI c
 - Bookmarks live only in local extension storage (turn id + text excerpt + rendered fragment; nothing uploaded); deleting bookmarks or uninstalling the extension wipes them
 - First connect shows real read progress; afterwards only new records are read incrementally, with auto-refresh rate-limited
 - Quota and cache hit rate are shown with one decimal; values below 100% are never rounded up to 100.0% early
-- The background message router validates senders: extension pages are fully trusted; content scripts must come from loopback or a granted site and may only use the message types the panel needs (`src/background/sender-guard.js`)
+- The background message router validates senders: extension pages are fully trusted; content scripts must come from loopback or a granted site and may only use the message types the panel needs (`src/background/sender-guard.js`). Note that "loopback" means any port on 127.0.0.1/localhost — any local service on your machine counts as a semi-trusted sender (it can trigger the device-auth flow or query external-account balances, the whitelisted operations). This is an inherent trade-off of the local-client architecture; to tighten it, narrow those two message types first
 - The Rive animation assets are exposed to all http(s) pages via `web_accessible_resources` (dynamically granted sites cannot be enumerated statically in the manifest), so a web page can in theory probe whether this extension is installed; no other resource or interface is exposed to arbitrary pages
 
 </details>

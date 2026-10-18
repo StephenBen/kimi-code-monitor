@@ -181,8 +181,12 @@ test('外部账户：未适配的供应商只进模块设置清单，不占常�
 test('子代理总览模块：注册、渲染与实时状态标记', () => {
   assert.match(renderSource, /function renderAgents\(\)/);
   assert.match(widgetSource, /agents: '子代理'/);
-  // 一行 = 一个代理实例 × 一个模型：按代理展开成多行，不按模型合并
-  assert.match(renderSource, /for \(const \{ model, totals \} of agentModelRows\(agentId\)\)/);
+  // 主代理一行一个模型（置顶、带主章）；子代理按模型合并（同模型多实例一行 + ×N）
+  assert.match(renderSource, /for \(const \{ model, totals \} of agentModelRows\('main'\)\)/);
+  assert.match(renderSource, /subagentModelGroups\(hiddenAgents\)/);
+  assert.match(renderSource, /\$\{label\}×\$\{group\.agents\.length\}/);
+  // 合并只发生在展示层：数据层仍是逐「代理 × 模型」（agentModelRows 不合并）
+  assert.match(panelStateSource, /export function subagentModelGroups/);
   assert.match(wsSource, /activeSubagents\.add/);
   assert.match(sessionSource, /seedAgentsFromScan/);
 });

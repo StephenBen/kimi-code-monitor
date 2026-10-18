@@ -19,7 +19,7 @@ import {
   usageDayKey,
   usageHourKey
 } from '../metrics.js';
-import { panel, agentDisplayName, agentModelRows, modelDisplayName } from './panel-state.js';
+import { panel, agentDisplayName, agentModelRows, modelDisplayName, subagentModelGroups } from './panel-state.js';
 import { STATUS_SHORT } from '../panel-app/status-copy.js';
 import {
   escapeHtml,
@@ -52,7 +52,6 @@ const {
   metrics,
   sessionSamples,
   turnDurations,
-  sessionAgentOrder,
   activeSubagents
 } = panel;
 
@@ -410,7 +409,7 @@ export function renderChart() {
   }
 }
 
-// 子代理总览模块：主代理一行置顶；子代理按模型分组（同模型合并为一行，
+// 子代理总览模块：主代理一行一个模型置顶；子代理按模型分组（同模型合并为一行，
 // 多实例标注 ×N）。徽标常态灰色，对应代理工作时点亮（主淡蓝、子淡绿）
 export function renderAgents() {
   if (!panel.els?.agentsList) return;
@@ -433,30 +432,43 @@ export function renderAgents() {
       </div>`);
   };
 
-  // 一行 = 一个代理实例 × 一个模型。同一个代理中途换过模型就是多行（各自显示
-  // 各自用过的模型），同一个模型的多个子代理也各占一行——代理 id 是会话日志里
-  // 的代理目录名（main / agent-1 / agent-2…），所以按模型合并会把它们糊成一行。
-  // 主代理一律带「主」章，子代理用「子 + 序号」区分同名的多个实例。
-  for (const agentId of sessionAgentOrder) {
-    if (hiddenAgents.includes(agentId)) continue;
-    const isMain = agentId === 'main';
-    const working = isMain ? mainWorking : activeSubagents.has(agentId);
-    const index = sessionAgentOrder.indexOf(agentId);
-    const badge = isMain
-      ? `<span class="ksb-agent-badge main${working ? ' on' : ''}">主</span>`
-      : `<span class="ksb-agent-badge sub${working ? ' on' : ''}">子${index}</span>`;
-    for (const { model, totals } of agentModelRows(agentId)) {
+  // 主代理置顶：一行 = 一个模型（同一个代理中途换过模型就是多行，各自显示
+  // 各自用过的模型），一律带「主」章
+  if (!hiddenAgents.includes('main')) {
+    for (const { model, totals } of agentModelRows('main')) {
       // 模型名缺失（未授权 CLI、实时事件不带模型）时兜底为代理名，避免空白单元格
-      const label = modelDisplayName(model) || t(isMain ? '主代理' : '子代理');
+      const label = modelDisplayName(model) || t('主代理');
       pushRow({
-        isMain,
+        isMain: true,
         totals,
-        working,
-        badge,
+        working: mainWorking,
+        badge: `<span class="ksb-agent-badge main${mainWorking ? ' on' : ''}">${t('主')}</span>`,
         name: label,
-        title: `${agentDisplayName(agentId)} · ${label}`
+        title: `${agentDisplayName('main')} · ${label}`
       });
     }
+  }
+
+  // 子代理按模型合并：同一个模型的多个实例合成一行，名称后标 ×N。
+  // 数据层仍是逐「代理 × 模型」（panel.agentModels，一行都不合并），这里只做
+  // 展示聚合——否则同模型开 200 个子代理就是 200 行，模型维度什么都看不出来。
+  // 悬停列成员代理（上限 8 个 + 「等 N 个」），具体实例的用量仍可按 id 在
+  // 编辑模式 ≡ 菜单里单独隐藏
+  for (const group of subagentModelGroups(hiddenAgents)) {
+    const working = group.agents.some((id) => activeSubagents.has(id));
+    // group.label 已是显示名（分组键）；空串（归不到模型）兜底「子代理」
+    const label = group.label || t('子代理');
+    const name = group.agents.length > 1 ? `${label}×${group.agents.length}` : label;
+    const titleLines = group.agents.slice(0, 8).map((id) => `${agentDisplayName(id)} · ${label}`);
+    if (group.agents.length > 8) titleLines.push(t('…等 {count} 个', { count: group.agents.length }));
+    pushRow({
+      isMain: false,
+      totals: group.totals,
+      working,
+      badge: `<span class="ksb-agent-badge sub${working ? ' on' : ''}">${t('子')}</span>`,
+      name,
+      title: titleLines.join('\n')
+    });
   }
   panel.els.agentsList.innerHTML = rows.join('');
 }

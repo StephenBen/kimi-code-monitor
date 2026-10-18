@@ -295,6 +295,13 @@ function aggregateSpeed(samples, maxSamples = 10, minDurationMs = MIN_SPEED_DURA
 
 function boosterBalanceYuan(wallet) {
   if (!wallet || typeof wallet !== 'object') return null;
+  // kap 桌面端形状（kap-server managedQuotaSchema.extraUsage）：单位是**分**。
+  // 桌面补丁的额度轮询直连 kap，拿到的就是它；与 web API 形状双读，
+  // 两边都归一到「元」返回。extraUsage 缺席（老客户端）时走下面的 web 分支。
+  if (Number.isFinite(Number(wallet.balanceCents))) {
+    return Math.max(0, Number(wallet.balanceCents) / 100);
+  }
+  // web API 形状：{ status, balance: { amountLeft } }，amountLeft 单位 1e-8 元
   const status = String(wallet?.status || '').toUpperCase();
   if (status !== 'STATUS_ACTIVE' && status !== 'STATUS_ENABLED') return 0;
   const amountLeft = Number(wallet?.balance?.amountLeft);

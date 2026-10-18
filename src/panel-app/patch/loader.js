@@ -138,12 +138,14 @@
   // 余额接口，结果直接从 push 管道进来（这一层不需要任何落盘快照）。
 
   // 加油包余额快照（fetch-wallet.mjs 产出）：以 quota 消息的 wallet 字段
-  // 送达（handleQuota 里 limit5h/limit7d 可缺席，只更新余额位）
+  // 送达（handleQuota 里 limit5h/limit7d 可缺席，只更新余额位）。
+  // fetchedAt 一并带上：bridge 据此判断「用户刚跑过刷新余额」——活数据
+  // （direct.js 的 extraUsage）未到位时它兜底，到位后只有更新的快照才生效
   startPolling({
     src: '/kcm/wallet.js',
     baseMs: 60_000,
     read: () => window.__kcmWallet,
-    onPayload: (j) => window.__kcm.push({ v: 1, type: 'quota', quota: { wallet: j.wallet } })
+    onPayload: (j) => window.__kcm.push({ v: 1, type: 'quota', quota: { wallet: j.wallet }, walletFetchedAt: j.fetchedAt })
   });
 
   // 面板资源同目录直链（shims.resolveResourcePath 优先命中这个映射）

@@ -123,6 +123,38 @@ export function agentModelRows(agentId) {
   return [{ model: '', totals: panel.agentTotals[agentId] || emptyAgentMetric() }];
 }
 
+/** 「子代理」模块的展示行：**同一个模型（按显示名）的多个子代理合并成一行**
+ * （用量求和、成员代理 id 按出现序收集），用量大的组在前。隐藏的代理（编辑模式
+ * ≡ 菜单里关掉的）整组不计入——用量与计数都从该模型行消失。
+ *
+ * 分组键用**显示名**（modelDisplayName 的输出）而不是原始模型名：'kimi-k2' 与
+ * 'kimi-code/k2' 剥前缀后同形、`__secondary__` 有次级模型真名时也该归到真名组
+ * ——用户眼里它们就是同一个模型，分成两行反而看不出来。modelDisplayName 对自身
+ * 输出幂等，渲染层直接拿 group.label 用，不再二次转换。
+ *
+ * 与 agentModelRows 的关系：那份仍是「代理 × 模型」的逐行真相（面板计数、
+ * 编辑菜单、本地汇总都读它，一行都不合并）；这里只服务展示——子代理 id 是
+ * 会话日志里的代理目录名（agent-1/agent-2…），同一个模型开 200 个实例逐行
+ * 渲染就是 200 行，模型维度的汇总被彻底埋掉。合并只发生在这一处。 */
+export function subagentModelGroups(hiddenAgents = []) {
+  const hidden = new Set(hiddenAgents);
+  const groups = new Map();
+  for (const agentId of panel.sessionAgentOrder) {
+    if (agentId === 'main' || hidden.has(agentId)) continue;
+    for (const { model, totals } of agentModelRows(agentId)) {
+      const label = modelDisplayName(model);
+      let group = groups.get(label);
+      if (!group) {
+        group = { label, totals: emptyAgentMetric(), agents: [] };
+        groups.set(label, group);
+      }
+      addIntoAgentMetric(group.totals, totals);
+      group.agents.push(agentId);
+    }
+  }
+  return [...groups.values()].sort((a, b) => metricWeight(b.totals) - metricWeight(a.totals));
+}
+
 /** 本地汇总的桶（{input 含缓存, output, cacheRead}）→ 面板内的代理计数
  *  （{inputTokens 只记非缓存, …}）。换算只在这一处做：换算了两次就是把缓存
  *  算两遍，两边相加必然虚高。 */

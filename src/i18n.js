@@ -57,6 +57,7 @@ const EN = {
   '主': 'main',
   '子': 'sub',
   '主代理': 'Main agent',
+  '…等 {count} 个': '…{count} more',
   '24h消耗': '24h usage',
   '今日消耗': "Today's usage",
   '7d消耗': '7d usage',

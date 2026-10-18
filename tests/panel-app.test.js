@@ -8,6 +8,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
 import { usageDayKey } from '../src/metrics.js';
+import { panel, subagentModelGroups, resetSessionAgents, seedSessionAgent } from '../src/content/panel-state.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
@@ -473,6 +474,83 @@ test('panel-app：重启后的历史重放不把空闲会话抬成「思考中�
   }
 });
 
+test('panel-app：余额跟随 kap 的 extraUsage 活数据，无钱包字段的额度消息不清空', async () => {
+  const { window } = createPage();
+  try {
+    setVisibleConfig(window);
+    const ready = new Promise((resolve) => window.addEventListener('kcm:panel-ready', resolve));
+    injectScript(window, 'dist/panel-app.js');
+    await ready;
+    await tick(window);
+    const push = (msg) => window.__kcm.push(msg);
+    const balance = () => window.document.getElementById('ksb-balance').textContent;
+    // kap 真实形状：extraUsage 单位是分；balanceCents 1358 → ¥13.58
+    const kapQuota = (extraUsage) => ({
+      v: 1, type: 'quota',
+      quota: {
+        limit5h: { usedRatio: 0.06, resetAt: '2026-10-18T09:45:42Z' },
+        limit7d: { usedRatio: 0.47, resetAt: '2026-10-22T09:45:42Z' }
+      },
+      ...(extraUsage === undefined ? {} : { extraUsage })
+    });
+
+    // 活数据到达：余额按分→元显示
+    push(kapQuota({ balanceCents: 1358, totalCents: 5000, currency: 'CNY' }));
+    assert.equal(balance(), '¥13.58');
+
+    // 曾经的 bug：只带 usages 的额度消息（每 60s 一条）把余额清成「余额 --」，
+    // 再被 wallet.js 快照轮询短暂恢复——用户看到的就是闪烁/不管用。现在沿用旧值
+    push(kapQuota());
+    assert.equal(balance(), '¥13.58', '无钱包字段的额度消息不得清空余额');
+
+    // wallet.js 快照（web API 形状）在活数据未到位前兜底；活数据已到位、
+    // 快照时间戳更旧时被忽略（不会把活数据覆盖回陈旧快照）
+    push({ v: 1, type: 'quota', quota: { wallet: { status: 'STATUS_ACTIVE', balance: { amountLeft: '99900000000' } } }, walletFetchedAt: '2026-10-14T23:13:00.000Z' });
+    assert.equal(balance(), '¥13.58');
+
+    // kap 明确没有加油包（extraUsage: null）才清空
+    push(kapQuota(null));
+    assert.equal(balance(), '余额 --');
+  } finally {
+    window.close();
+  }
+});
+
+test('panel-app：活数据未到位时 wallet.js 快照兜底（web API 形状）', async () => {
+  const { window } = createPage();
+  try {
+    setVisibleConfig(window);
+    const ready = new Promise((resolve) => window.addEventListener('kcm:panel-ready', resolve));
+    injectScript(window, 'dist/panel-app.js');
+    await ready;
+    await tick(window);
+    const push = (msg) => window.__kcm.push(msg);
+    const balance = () => window.document.getElementById('ksb-balance').textContent;
+
+    // 首屏：kap 还没响应，loader 的 wallet.js 快照（安装时写入）先兜底
+    push({
+      v: 1, type: 'quota',
+      quota: { wallet: { status: 'STATUS_ACTIVE', balance: { amountLeft: '9990000000' } } },
+      walletFetchedAt: '2026-10-14T23:13:00.000Z'
+    });
+    assert.equal(balance(), '¥99.90');
+
+    // 活数据随后到达：以活数据为准（kap extraUse 单位分）
+    push({ v: 1, type: 'quota', quota: { limit5h: { usedRatio: 0.06 } }, extraUsage: { balanceCents: 1358, currency: 'CNY' } });
+    assert.equal(balance(), '¥13.58');
+
+    // 用户跑过技能「刷新余额」：fetchedAt 比上次活数据新，快照重新生效
+    push({
+      v: 1, type: 'quota',
+      quota: { wallet: { status: 'STATUS_ACTIVE', balance: { amountLeft: '8880000000' } } },
+      walletFetchedAt: new Date(Date.now() + 60_000).toISOString()
+    });
+    assert.equal(balance(), '¥88.80');
+  } finally {
+    window.close();
+  }
+});
+
 test('panel-app：切到没打开过的会话，用本地汇总做底（代理 × 模型分行）', async () => {
   const { window } = createPage();
   try {
@@ -511,18 +589,18 @@ test('panel-app：切到没打开过的会话，用本地汇总做底（代理 �
     assert.equal(text('ksb-input-tokens'), '30k', '没用过的会话应由本地汇总做底');
     assert.equal(text('ksb-output-tokens'), '500');
 
-    // 代理明细：一行 = 一个代理实例 × 一个模型；子代理章带序号、模型名前缀已剥
+    // 代理明细：主代理一行一个模型；子代理按模型合并（单实例无计数后缀），模型名前缀已剥
     assert.deepEqual(agentRows(), [
       ['主', 'k3', '21k', '300', '80.9%'],
       // 模型名去掉 kimi-code/ 与 kimi- 前缀（窄面板里保留可辨识部分）
-      ['子1', 'for-coding', '9k', '200', '33.3%']
+      ['子', 'for-coding', '9k', '200', '33.3%']
     ]);
   } finally {
     window.close();
   }
 });
 
-test('panel-app：同一代理换过模型各占一行，同模型的多个子代理不合并', async () => {
+test('panel-app：同模型的多个子代理合并为一行（名称标共 N 个），主代理仍按模型分行', async () => {
   const { window } = createPage();
   try {
     setVisibleConfig(window);
@@ -539,7 +617,7 @@ test('panel-app：同一代理换过模型各占一行，同模型的多个子�
         session_d: {
           input: 6000, output: 60, cacheRead: 0,
           agents: {
-            // 主代理中途换过模型：两个模型两行
+            // 主代理中途换过模型：两个模型两行（主代理不参与合并）
             main: {
               models: {
                 'kimi-code/k3-256k': { input: 2000, output: 20, cacheRead: 0, records: 2 },
@@ -547,27 +625,80 @@ test('panel-app：同一代理换过模型各占一行，同模型的多个子�
               },
               firstAt: 1, lastAt: 3
             },
-            // 同一个模型的三个子代理：三个实例三行，不合并成一行 ×3
+            // 同一个模型的三个子代理：合并成一行，名称标（共 3 个），用量求和
             'agent-1': { models: { 'kimi-code/small': { input: 1000, output: 10, cacheRead: 0, records: 1 } }, firstAt: 1, lastAt: 1 },
             'agent-2': { models: { 'kimi-code/small': { input: 1000, output: 10, cacheRead: 0, records: 1 } }, firstAt: 2, lastAt: 2 },
-            'agent-3': { models: { 'kimi-code/small': { input: 1000, output: 10, cacheRead: 0, records: 1 } }, firstAt: 3, lastAt: 3 }
+            'agent-3': { models: { 'kimi-code/small': { input: 1000, output: 10, cacheRead: 0, records: 1 } }, firstAt: 3, lastAt: 3 },
+            // 另一个模型的单实例：单独一行，无计数后缀
+            'agent-4': { models: { 'kimi-code/other': { input: 1000, output: 10, cacheRead: 0, records: 1 } }, firstAt: 4, lastAt: 4 }
           }
         }
       }
     });
 
     push({ v: 1, type: 'session', sid: 'session_d', snapshot: zeroSnapshot() });
-    // 主代理两行（各自一个模型），三个子代理三行（同模型但实例不同）；无缓存读时命中率为 0.0%
+    // 主代理两行（各自一个模型）；子代理两行：small 三实例合并（3k/30）、other 单实例
     assert.deepEqual(agentRows(), [
       ['主', 'k3-256k', '2k', '20', '0.0%'],
       ['主', 'k3', '1k', '10', '0.0%'],
-      ['子1', 'small', '1k', '10', '0.0%'],
-      ['子2', 'small', '1k', '10', '0.0%'],
-      ['子3', 'small', '1k', '10', '0.0%']
+      ['子', 'small×3', '3k', '30', '0.0%'],
+      ['子', 'other', '1k', '10', '0.0%']
     ]);
+    // 合并行的悬停列成员代理（上限 8 个）
+    const mergedTitle = window.document.querySelector('#ksb-agents-list .ksb-agent-row:nth-child(3)').title;
+    assert.match(mergedTitle, /子代理 1 · small/);
+    assert.match(mergedTitle, /子代理 3 · small/);
+    assert.doesNotMatch(mergedTitle, /子代理 4/);
   } finally {
     window.close();
   }
+});
+
+test('子代理按模型合并：同模型多实例一组（用量求和、成员按出现序），隐藏的代理整组扣除', () => {
+  resetSessionAgents();
+  seedSessionAgent('main', { 'kimi-code/k3': { input: 1000, output: 10, cacheRead: 0, records: 1 } });
+  seedSessionAgent('agent-1', { 'kimi-code/small': { input: 1000, output: 10, cacheRead: 0, records: 1 } });
+  seedSessionAgent('agent-2', { 'kimi-code/small': { input: 2000, output: 20, cacheRead: 0, records: 2 } });
+  seedSessionAgent('agent-3', { 'kimi-code/other': { input: 500, output: 5, cacheRead: 0, records: 1 } });
+
+  const groups = subagentModelGroups([]);
+  // main 不进组；两组子代理（分组键是显示名），用量大的在前
+  assert.deepEqual(groups.map((g) => g.label), ['small', 'other']);
+  const small = groups[0];
+  assert.deepEqual(small.agents, ['agent-1', 'agent-2']);
+  // 合并行用量 = 成员用量之和（输入含缓存读口径）
+  assert.equal(small.totals.inputTokens + small.totals.cacheReadTokens, 3000);
+  assert.equal(small.totals.outputTokens, 30);
+
+  // 隐藏 agent-1：该组只剩 agent-2，用量与计数同步扣除（不是把整组藏掉）
+  const filtered = subagentModelGroups(['agent-1']);
+  assert.deepEqual(filtered[0].agents, ['agent-2']);
+  assert.equal(filtered[0].totals.inputTokens + filtered[0].totals.cacheReadTokens, 2000);
+  assert.equal(filtered[0].totals.outputTokens, 20);
+
+  // 整组都被隐藏时该组消失（other 组只剩 agent-3，隐藏后不出现）
+  assert.deepEqual(subagentModelGroups(['agent-3']).map((g) => g.label), ['small']);
+
+  resetSessionAgents();
+});
+
+test('子代理按模型合并：分组键是显示名——剥前缀后同形的模型不分成两行', () => {
+  resetSessionAgents();
+  seedSessionAgent('main', { 'kimi-code/k3': { input: 1000, output: 10, cacheRead: 0, records: 1 } });
+  // 同一模型的两种写法（实时事件带全名、扫描汇总带短名）：显示名都是 k2
+  seedSessionAgent('agent-1', { 'kimi-for-coding': { input: 1000, output: 10, cacheRead: 0, records: 1 } });
+  seedSessionAgent('agent-2', { 'kimi-code/kimi-for-coding': { input: 2000, output: 20, cacheRead: 0, records: 2 } });
+  // __secondary__ 占位符：有次级模型真名时归到真名组
+  panel.secondaryModelName = 'kimi-code/step-5';
+  seedSessionAgent('agent-3', { __secondary__: { input: 500, output: 5, cacheRead: 0, records: 1 } });
+
+  const groups = subagentModelGroups([]);
+  assert.deepEqual(groups.map((g) => g.label), ['for-coding', 'step-5']);
+  assert.deepEqual(groups[0].agents, ['agent-1', 'agent-2']);
+  assert.equal(groups[0].totals.inputTokens + groups[0].totals.cacheReadTokens, 3000);
+  assert.deepEqual(groups[1].agents, ['agent-3']);
+  panel.secondaryModelName = '';
+  resetSessionAgents();
 });
 
 test('panel-app：重放的历史事件不进计数器，断线补发按序号去重', async () => {

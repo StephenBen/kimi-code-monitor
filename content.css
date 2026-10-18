@@ -479,6 +479,11 @@ html[data-color-scheme="dark"] #ksb-widget .ksb-title {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
+  /* 开关项随代理/账户数量增长（同模型 200 个子代理时 ≡ 菜单就是 200 项）：
+     封顶 + 内部滚动，否则弹出层几千像素高、直接飞出面板 */
+  max-height: 180px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .ksb-menu-opt {

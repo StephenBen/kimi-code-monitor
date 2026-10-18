@@ -58,7 +58,7 @@ export async function readExternalAccounts() {
   });
 }
 
-async function fetchExternalAccount(account, lastGood) {
+async function fetchExternalAccount(account, lastGood, now = Date.now()) {
   const provider = KimiExternalProviders.PROVIDERS[account.provider];
   if (!provider) return { id: account.id, name: account.provider, error: '未知 provider' };
   const base = {
@@ -82,16 +82,18 @@ async function fetchExternalAccount(account, lastGood) {
   }
   try {
     const result = await provider.fetch(key);
-    return { ...base, ...result, error: '', fetchedAt: Date.now() };
+    return { ...base, ...result, error: '', fetchedAt: now };
   } catch (error) {
     return fail(error?.message || String(error));
   }
 }
 
 /** 缓存条目：value = 最近一次结果（可能失败）；lastGood = 最近一次成功值。
- *  分开存——失败不能把成功值冲掉，否则下一轮也无旧数可沿用。 */
-function cacheEntry(value, previousLastGood) {
-  return { at: Date.now(), value, lastGood: value.error ? (previousLastGood || null) : value };
+ *  分开存——失败不能把成功值冲掉，否则下一轮也无旧数可沿用。
+ *  at/fetchedAt 一律用调用方注入的 now（生产环境即 Date.now()），
+ *  测试才能推虚拟时钟而不被真实时钟搅局（external-lastgood 曾因此 flaky）。 */
+function cacheEntry(value, previousLastGood, now = Date.now()) {
+  return { at: now, value, lastGood: value.error ? (previousLastGood || null) : value };
 }
 
 export async function getExternalProvidersStatus({ now = Date.now() } = {}) {
@@ -103,8 +105,8 @@ export async function getExternalProvidersStatus({ now = Date.now() } = {}) {
       results.push(cached.value);
       continue;
     }
-    const value = await fetchExternalAccount(account, cached?.lastGood);
-    externalProviderCache.set(account.id, cacheEntry(value, cached?.lastGood));
+    const value = await fetchExternalAccount(account, cached?.lastGood, now);
+    externalProviderCache.set(account.id, cacheEntry(value, cached?.lastGood, now));
     results.push(value);
   }
   return { ok: true, providers: results };
