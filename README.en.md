@@ -2,7 +2,7 @@
 
 <p align="center"><strong><a href="README.md">简体中文</a> | English</strong></p>
 
-> [1. Features](#1-features): [Pet](#universal-codex-desktop-pet) · [Usage Analytics](#usage-analytics) · [Bookmarks](#ai-reply-bookmarks) · [Share Card](#usage-share-card) · [Mascot](#a-mascot-that-reflects-state) · [Custom Panel](#modular-customizable-panel) · [Auto-Archive](#auto-archive-inactive-chats-experimental) · [Titles](#session-title-auto-generation-official-capability) · [More](#more)
+> [1. Features](#1-features): [Pet](#universal-codex-desktop-pet) · [Usage Analytics](#usage-analytics) · [Bookmarks](#ai-reply-bookmarks) · [Share Card](#usage-share-card) · [Mascot](#a-mascot-that-reflects-state) · [Custom Panel](#modular-customizable-panel) · [Auto-Archive](#auto-archive-inactive-chats-experimental) · [More](#more)
 >
 > [**2. Installation & Authorization**](#2-installation--authorization): [desktop client](#2-installation--authorization) · [Chrome extension](#2-installation--authorization)
 >
@@ -157,22 +157,12 @@ The extension uses its own OAuth token and never reads or writes Kimi Code CLI c
 
 ## 3. Data & Privacy
 
-<details>
-<summary>Expand</summary>
-
-- WebSocket session history is not persisted by default; input, output, cache, speed, and sparklines only hold current-page data
-- Without the local CLI connection, 24h / 7d / 30d long-term stats stay locked; all real-time features work regardless
-- With the CLI connected, only `sessions/**/agents/*/wire.jsonl` is read, extracting just `usage.record` usage entries and model names from `config.update`; when the `~/.kimi-code` root directory is granted, the `[secondary_model]` model name in `config.toml` is also read. Conversation text, tool arguments, and answers are never stored or uploaded
-- Auto-tidy only reads session list metadata (created/updated times, titles, activity status); classification and archiving are explicit API calls. Conversation content is never read
-- Input = uncached input + cache read + cache creation; cache hit rate = cache read ÷ total input
-- The CLI stats cache keeps only file read offsets and per-day numbers for the last 90 days; disconnect and clear anytime, then regenerate
-- Bookmarks live only in local extension storage (turn id + text excerpt + rendered fragment; nothing uploaded); deleting bookmarks or uninstalling the extension wipes them
-- First connect shows real read progress; afterwards only new records are read incrementally, with auto-refresh rate-limited
-- Quota and cache hit rate are shown with one decimal; values below 100% are never rounded up to 100.0% early
-- The background message router validates senders: extension pages are fully trusted; content scripts must come from loopback or a granted site and may only use the message types the panel needs (`src/background/sender-guard.js`). Note that "loopback" means any port on 127.0.0.1/localhost — any local service on your machine counts as a semi-trusted sender (it can trigger the device-auth flow or query external-account balances, the whitelisted operations). This is an inherent trade-off of the local-client architecture; to tighten it, narrow those two message types first
-- The Rive animation assets are exposed to all http(s) pages via `web_accessible_resources` (dynamically granted sites cannot be enumerated statically in the manifest), so a web page can in theory probe whether this extension is installed; no other resource or interface is exposed to arbitrary pages
-
-</details>
+- **In-memory by default**: input/output/cache/speed and sparklines only hold current-page data; nothing is uploaded. Without the local CLI connection, long-term stats stay locked
+- **Usage-only when connected**: just `usage.record` entries and model names from `wire.jsonl` (auto-tidy likewise reads session-list metadata only) — conversation text, tool arguments, and answers are never stored or uploaded
+- **Bookmarks stay local**: extension storage holds only the turn id + a text excerpt; deleting bookmarks or uninstalling the extension wipes them
+- **Credentials encrypted at rest**: OAuth tokens and external API keys are stored through the local encrypted vault (AES-GCM); the extension never reads or writes Kimi Code CLI credentials
+- **Sender validation**: the background only trusts extension pages and content scripts from loopback or granted sites; note that loopback means any port — any local service on your machine counts as a semi-trusted sender (it can trigger the device-auth flow or query external-account balances, the whitelisted operations), an inherent trade-off of the local-client architecture
+- **One known detectability**: the Rive animation assets are visible to all http(s) pages, so a web page can probe whether this extension is installed; no other resource or interface is exposed to arbitrary pages
 
 ## 4. Technical Implementation
 
@@ -180,25 +170,4 @@ The panel is a content script injected into the kimi web page: it reconstructs s
 
 The desktop client (patch edition) shares the same panel body and rendering layer from `src/content/`, but its data path is entirely different — it bypasses the extension background and talks to the client directly: `loader.js` injects into the client's page (a script tag carrying the payload content hash to bust caching; the original `index.html` is backed up and restored byte-for-byte on uninstall); the panel's `direct.js` connects straight to the local kap-server — WebSocket event stream for session state, REST polling for quota and booster balance; external accounts read the providers configured in the client itself (the key is used once in memory only, never persisted) and query each vendor's balance endpoint directly, refreshing every 60 seconds and keeping the last successful value (with its age) on failure; long-term stats are pre-filled by a full scan of `~/.kimi-code/sessions` at install time (per-day / per-hour / per-session agent × model breakdown) and keep accumulating in-page. Zero-prerequisite installation works via two thin "launcher" shells (`install.sh` / `install.cmd`) that prefer the client's built-in Node runtime (Electron's `ELECTRON_RUN_AS_NODE`), falling back to a system Node; the install logic itself lives only in `install.mjs`, shared across macOS and Windows.
 
-<details>
-<summary>Expand</summary>
-
-Source lives in `src/` (ES modules). `npm run build` bundles with esbuild into `dist/` (four bundles: content/background/popup/panel-app); the manifest and popup.html only reference `dist/` output. `npm test` builds then runs the full test suite (including release guards); `npm run lint` checks references (no-undef etc.).
-
-Four runtime surfaces, each with its own directory; shared modules sit at the `src/` root:
-
-- `src/content.js` + `src/content/`: the in-page panel — `content.js` (orchestration & lifecycle), `panel-state.js` (shared state), `render.js` (rendering), `widget-structure.js` (DOM & edit mode), `websocket-session.js` (WS state machine), `session.js` (session & snapshots), `quota.js` (quota & auth), `usage-daily.js` (CLI long-term stats & external accounts), `pet-panel.js` (Rive mascot & desktop pet driver), `bookmarks.js` (AI reply bookmarks: star, interleaved outline rows, bookmark page & detail modal, cross-session jumps), `utils.js` / `walkthrough.js`
-- `src/background/`: background modules — `store.js` (storage lock/fetch/relay), `vault.js` (secret vault), `oauth.js` (authorization & accounts), `quota.js` (quota/alerts/snapshots), `external.js` (external providers), `pet.js`, `cli-scan.js`, `dynamic-hosts.js` (dynamic site grants), `sender-guard.js` (message sender guard), `tidy.js` (auto-tidy scheduling); `src/background.js` is the message router
-- `src/popup/`: popup sections — `shared.js`, `usage.js`, `accounts.js`, `external.js`, `rename.js` (rename switch), `tidy.js` (extensions card: tidy config / review list / bookmarks switch), `pets.js`, `share-card.js` (share-card data/preview/export); `src/popup.js` is the assembly entry, styles in `popup.css`
-- `src/share-card.js`: share-card composition (pure function: daily data in, SVG out)
-- `src/i18n.js`: Chinese/English strings (gettext style, follows Kimi Web's language setting)
-- `src/metrics.js`: shared pure functions (usage parsing, date aggregation, config normalization)
-- `src/tidy-rules.js`: auto-tidy classification pure functions (three rules + guards; list metadata in, candidates out)
-- `src/cli-usage.js`: local CLI directory grant, incremental reads, per-day aggregation
-- `src/session-files.js`: local session directory layout rules (wire.jsonl enumeration & naming, shared by the extension and the installer)
-- `src/providers.js`: external provider endpoints and parsing
-- `src/pet/`: desktop pet — `sprites.js` (atlas player + behaviors), `install.js` (gallery command parsing & download), `store.js` (IndexedDB asset store)
-- `src/panel-app.js` + `src/panel-app/`: standalone panel page for the desktop patch (shares the panel body and rendering with `content/`) — `panel-app.js` (entry: mount/config/direct-mode startup), `bridge.js` (push bus & message dispatch), `direct.js` (kap-server direct: WS event stream + REST polling), `shims.js` (chrome.* replacement), `accumulate.js` (in-page per-day accumulation), `status-copy.js` (tiered status copy), `patch/` (`loader.js` injector, `install.mjs` installer (single cross-platform logic; `install.sh`/`install.cmd` are thin launchers that borrow the client's built-in Node — zero install prerequisites), `scan.mjs` history scan)
-- `rive/`: mascot animation runtime and assets (bundled locally, no remote dependency)
-
-</details>
+Source lives in `src/` (ES modules). `npm run build` bundles with esbuild into `dist/` (four bundles: content/background/popup/panel-app); the manifest and popup.html only reference `dist/` output. `npm test` builds then runs the full test suite (including release guards). The directory layout of the four runtime surfaces and each module's responsibilities are documented in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).

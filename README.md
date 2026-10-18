@@ -2,7 +2,7 @@
 
 <p align="center"><strong>简体中文 | <a href="README.en.md">English</a></strong></p>
 
-> [一、主要特性](#一主要特性)：[宠物](#通用-codex-桌面宠物) · [用量分析](#用量分析) · [AI 回复收藏](#ai-回复收藏) · [分享卡片](#用量分享卡片) · [吉祥物](#会反映状态的吉祥物) · [自定义面板](#模块化自定义面板) · [自动归档](#自动归档不活跃对话实验性) · [标题生成](#会话标题自动生成官方能力) · [更多](#更多)
+> [一、主要特性](#一主要特性)：[宠物](#通用-codex-桌面宠物) · [用量分析](#用量分析) · [AI 回复收藏](#ai-回复收藏) · [分享卡片](#用量分享卡片) · [吉祥物](#会反映状态的吉祥物) · [自定义面板](#模块化自定义面板) · [自动归档](#自动归档不活跃对话实验性) · [更多](#更多)
 >
 > [**二、安装与授权**](#二安装与授权)：[客户端](#二安装与授权) · [Chrome 插件](#二安装与授权)
 >
@@ -156,22 +156,12 @@ popup 消耗量板块点「生成分享图」，按当前选择的日期范围�
 
 ## 三、数据与隐私
 
-<details>
-<summary>展开查看</summary>
-
-- 默认不持久化 WebSocket 会话历史；输入、输出、缓存、速度和折线图只维护当前页面数据
-- 未连接本地 CLI 时，24h、7天、30天长期统计保持锁定，其他实时功能不受影响
-- 连接本地 CLI 后，只读取 `sessions/**/agents/*/wire.jsonl`，仅提取 `usage.record` 用量记录和 `config.update` 中的模型名；授权 `~/.kimi-code` 根目录时另读 `config.toml` 的 `[secondary_model]` 模型名。不保存或上传对话原文、工具参数和回答内容
-- 自动整理只读会话列表接口的元数据（创建/更新时间、标题、活动状态），判定与归档均为显式 API 调用；不读取对话内容
-- 输入 = 未缓存输入 + 缓存读取 + 缓存创建；缓存命中率 = 缓存读取 ÷ 总输入
-- CLI 统计缓存只保存文件读取位置和最近90天的按天数字，可随时断开并清除后重新生成
-- 收藏功能只保存在本地扩展存储（turnId + 内容摘录 + 渲染后片段，不含任何上传）；删除收藏或卸载扩展即清除
-- 首次连接显示真实读取百分比；后续只增量读取新增记录，并限制自动刷新频率
-- 额度与缓存命中率统一显示一位小数；真实值不足100%时不会提前显示为100.0%
-- 后台消息路由校验来源：扩展弹窗全量放行；内容脚本仅限本机回环与已授权站点，且只能使用面板功能所需的消息类型（`src/background/sender-guard.js`）。注意「本机回环」指 127.0.0.1/localhost 的**任意端口**——你机器上任何一个本地服务都被视为半可信来源，可触发设备授权流程、查询外部账户余额等白名单操作；这是本地客户端架构的固有取舍，如需收紧请优先收敛这两类消息
-- Rive 动画资产经 `web_accessible_resources` 对所有 http(s) 页面可见（动态授权的站点无法在 manifest 里静态列举，只能全量放开），理论上可被网页用于探测本机是否安装了本扩展；除此之外扩展不向任意网页暴露资源或接口
-
-</details>
+- **数据默认只进内存**：输入/输出/缓存/速度与折线图只维护当前页面，不上传；未连接本地 CLI 时，长期统计保持锁定
+- **连接后也只读用量**：仅提取 `wire.jsonl` 里的 `usage.record` 用量记录与模型名（自动整理同样只读会话列表的元数据）——不保存、不上传对话原文、工具参数与回答内容
+- **收藏只存本地**：扩展存储里仅 turnId + 内容摘录，删除收藏或卸载扩展即清除
+- **凭据加密落盘**：OAuth token 与外部 API key 经本机加密库（AES-GCM）存储；扩展不读写 Kimi Code CLI 的凭据
+- **消息来源校验**：后台只放行扩展页面与「本机回环 + 已授权站点」的内容脚本；注意回环指任意端口——本机任意本地服务被视为半可信来源，可触发授权流程、查询外部账户余额等白名单操作，这是本地客户端架构的固有取舍
+- **一处已知可探测性**：Rive 动画资产对所有 http(s) 页面可见，网页可借此探测本机是否安装了本扩展；除此之外扩展不向任意网页暴露资源或接口
 
 ## 四、技术实现
 
@@ -179,25 +169,4 @@ popup 消耗量板块点「生成分享图」，按当前选择的日期范围�
 
 桌面客户端（补丁形态）与扩展共用 `src/content/` 的同一套面板本体与渲染层，但数据链路完全不同——不经过扩展后台，全部直连客户端自己：`loader.js` 注入客户端页面（脚本标签带载荷内容哈希穿透缓存，原始 `index.html` 自动备份、卸载逐字节还原）；面板的 `direct.js` 直连同机 kap-server——WebSocket 事件流还原会话状态、REST 轮询额度与加油包余额；外部账户读取客户端自己的供应商配置（key 只在内存里用一次，不落盘），直连各厂商的余额端点，每 60 秒刷新、失败时沿用上次成功的数值并标注数据时间；长期统计由安装器全量扫描 `~/.kimi-code/sessions` 预填（按天 / 按小时 / 按会话的代理 × 模型汇总），之后在页面内继续实时积累。安装零前提的实现：两个「点火壳」（`install.sh` / `install.cmd`）优先借客户端内置的 Node 运行时（Electron 的 `ELECTRON_RUN_AS_NODE`），系统 Node 兜底；安装逻辑只有 `install.mjs` 一份，跨 macOS / Windows。
 
-<details>
-<summary>展开查看</summary>
-
-源码在 `src/`（ES modules），`npm run build` 用 esbuild 打出 `dist/`（content/background/popup/panel-app 四个 bundle），manifest 与 popup.html 只引用 `dist/` 产物。`npm test` 先构建再跑全部测试（含发版守卫），`npm run lint` 做引用检查（no-undef 等）。
-
-四个运行面各自一个目录，共享模块在 `src/` 根部：
-
-- `src/content.js` + `src/content/`：页面内面板——`content.js`（编排入口与生命周期）、`panel-state.js`（共享状态容器）、`render.js`（渲染层）、`widget-structure.js`（DOM 结构与编辑模式）、`websocket-session.js`（WS 状态机）、`session.js`（会话与快照）、`quota.js`（额度与授权）、`usage-daily.js`（CLI 长期统计与外部账户）、`pet-panel.js`（Rive 吉祥物与桌面宠物驱动）、`bookmarks.js`（AI 回复收藏：星标、目录交错行、收藏页与详情弹层、跨会话跳转）、`utils.js` / `walkthrough.js`
-- `src/background/`：后台域模块——`store.js`（存储锁/fetch/中转）、`vault.js`（密钥库）、`oauth.js`（授权与账户）、`quota.js`（额度/预警/快照）、`external.js`（外部 provider）、`pet.js`、`cli-scan.js`、`dynamic-hosts.js`（动态站点授权）、`sender-guard.js`（消息来源守卫）、`tidy.js`（自动归档调度）；`src/background.js` 是消息路由入口
-- `src/popup/`：弹窗板块——`shared.js`、`usage.js`、`accounts.js`、`external.js`、`rename.js`（命名开关）、`tidy.js`（扩展功能卡片：整理配置/待确认列表/收藏开关）、`pets.js`、`share-card.js`（分享卡片取数/预览/导出）；`src/popup.js` 是装配入口，样式在 `popup.css`
-- `src/share-card.js`：分享卡片构图（纯函数，输入按天数据输出 SVG）
-- `src/i18n.js`：中英文案（gettext 风格，跟随 Kimi Web 语言设置）
-- `src/metrics.js`：共享纯函数（用量解析、日期汇总、配置归一化）
-- `src/tidy-rules.js`：自动归档判定纯函数（三档规则 + 护栏，输入列表元数据输出候选）
-- `src/cli-usage.js`：本地 CLI 目录授权、增量读取和按天汇总
-- `src/session-files.js`：本地会话目录布局规则（wire.jsonl 的枚举与命名，扩展侧与安装器侧共用同一份）
-- `src/providers.js`：外部 provider 的端点与解析
-- `src/pet/`：桌面宠物——`sprites.js`（图集播放器 + 行为）、`install.js`（画廊命令解析与下载）、`store.js`（IndexedDB 素材库）
-- `src/panel-app.js` + `src/panel-app/`：桌面补丁的独立面板页（与侧栏面板共用 `content/` 的本体与渲染）——`panel-app.js`（入口：挂载/配置/直连启动）、`bridge.js`（push 总线与消息分发）、`direct.js`（kap-server 直连：WS 事件流 + REST 轮询）、`shims.js`（chrome.* 替代）、`accumulate.js`（页内按天积累）、`status-copy.js`（状态文案分级）、`patch/`（`loader.js` 注入器、`install.mjs` 安装器（跨 macOS/Windows 唯一逻辑，`install.sh`/`install.cmd` 为点火壳——借客户端自带的 Node，零安装前提）、`scan.mjs` 历史扫描）
-- `rive/`：吉祥物动画运行时与资产（本地打包，无远程依赖）
-
-</details>
+源码在 `src/`（ES modules），`npm run build` 用 esbuild 打出 `dist/`（content/background/popup/panel-app 四个 bundle）；`npm test` 先构建再跑全部测试（含发版守卫）。四个运行面的目录划分与各模块职责见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。

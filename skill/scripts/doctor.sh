@@ -72,8 +72,8 @@ else
   warn "无历史统计数据文件（全新环境正常；否则重跑安装预填）"
 fi
 [ -s "$VIB/external.js" ] && echo "INFO  发现旧版外部账户快照 external.js（新版不再使用，重跑安装即可清掉）"
-[ -s "$VIB/wallet.js" ] && ok "加油包余额快照在位（$(stat -f '%Sm' -t '%m-%d %H:%M' "$VIB/wallet.js")）" \
-  || warn "无加油包余额快照（面板余额位显示 --；可让技能刷新余额）"
+[ -s "$VIB/wallet.js" ] && ok "加油包余额快照在位（$(stat -f '%Sm' -t '%m-%d %H:%M' "$VIB/wallet.js")；活数据优先，快照仅兜底）" \
+  || warn "无加油包余额快照（余额以活数据为准；客户端没在运行时才显示 --，可让技能刷新一份兜底）"
 
 # 5. kap 本地服务（发现 + 探测）
 KAP_PORT=""

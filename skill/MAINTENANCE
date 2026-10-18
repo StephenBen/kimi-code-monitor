@@ -1,8 +1,15 @@
-skill-version: 9
+skill-version: 10
 patch-version: 3.5.3
 repo: https://github.com/bfjnbvf/kimi-code-monitor
 
 # 更新记录
+
+## 10（2026-10-18）
+
+配套补丁 3.5.3：
+
+- **加油包余额通路描述改正**（faq.md / external-accounts.md / doctor.sh）：3.5.3 起桌面端标题行余额改读 kap 的 extraUsage 活数据（每 60s，失败沿用上次成功值），wallet.js 快照降级为兜底（活数据未到位 / 客户端没在运行 / 用户刚刷新过时显示）。「余额怎么不变化」的答疑从「那是快照」改为活数据口径；doctor 的快照检查措辞同步
+- 补丁 3.5.3 另含（与扩展同源码，随 v3.5.3 发版；均为配套小修复，不影响技能行为与文档）：子代理总览按模型合并为一行（同模型多实例名称标 ×N，200 个代理从 200 行变 1 行）；收藏消毒器补 base/style/SMIL 与全属性 URL 拦截；外部账户状态时间注入修 flaky 测试；开发依赖 undici 升级
 
 ## 9（2026-09-28）
 
